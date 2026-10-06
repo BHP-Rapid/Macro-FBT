@@ -1,0 +1,1559 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SMART FBT - Automated Benefit Tax Reconciliation & Upload Tool</title>
+  <meta name="description"
+    content="SMART FBT: Automated SAP & PeopleSoft Reconciliation System for Fringe Benefit Tax. Upload files, compare data, and download difference reports instantly.">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SheetJS -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- Google Fonts -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              200: '#bfdbfe',
+              300: '#93c5fd',
+              400: '#60a5fa',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+              950: '#172554',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #f8fafc;
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ==========================================
+       DESIGN SYSTEM: SMART FBT
+       Philosophy: Clean white canvas.
+       Color only appears to signal meaning.
+       Navy = Brand/Chrome only.
+       Color = Status differentiation only.
+       ========================================== */
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 10px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #1e3f7a;
+    }
+
+    /* Dropzone drag active */
+    .dropzone-active {
+      border-color: #1e3f7a !important;
+      background-color: #f0f4ff !important;
+    }
+
+    /* ---- STATUS BADGES (purposeful color) ---- */
+    /* Principle: soft background, dark text, clear left-border accent */
+    .badge-matched {
+      background: #f0fdf4;
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+      font-weight: 700;
+    }
+
+    .badge-excess-sap {
+      background: #fffbeb;
+      color: #b45309;
+      border: 1px solid #fde68a;
+      font-weight: 700;
+    }
+
+    .badge-excess-ps {
+      background: #fff1f2;
+      color: #be123c;
+      border: 1px solid #fecdd3;
+      font-weight: 700;
+    }
+
+    .badge-only-sap {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      font-weight: 700;
+    }
+
+    .badge-only-ps {
+      background: #faf5ff;
+      color: #7e22ce;
+      border: 1px solid #e9d5ff;
+      font-weight: 700;
+    }
+
+    /* ---- ROW HIGHLIGHTS (very subtle, just a whisper of color) ---- */
+    .row-match {
+      background: #ffffff;
+    }
+
+    .row-excess-sap {
+      background: #ffffff;
+      border-left: 3px solid #f59e0b;
+    }
+
+    .row-excess-ps {
+      background: #ffffff;
+      border-left: 3px solid #f43f5e;
+    }
+
+    .row-only-sap {
+      background: #ffffff;
+      border-left: 3px solid #60a5fa;
+    }
+
+    .row-only-ps {
+      background: #ffffff;
+      border-left: 3px solid #a78bfa;
+    }
+
+    /* ---- KPI CARD ACCENTS ---- */
+    .kpi-card-match {
+      border-left: 4px solid #22c55e;
+    }
+
+    .kpi-card-mismatch {
+      border-left: 4px solid #f59e0b;
+    }
+
+    .kpi-card-notfound {
+      border-left: 4px solid #a78bfa;
+    }
+
+    .kpi-card-diff {
+      border-left: 4px solid #1e3f7a;
+      background: #1e3f7a;
+    }
+
+    /* ---- TABLE ---- */
+    .table-th {
+      background: rgba(248, 250, 252, 0.9);
+      backdrop-filter: blur(8px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      color: #475569;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 700;
+      border-bottom: 2px solid #e2e8f0;
+    }
+
+    .data-row:hover {
+      background: #f8fafc !important;
+    }
+
+    .data-row {
+      transition: background 0.1s;
+    }
+
+    /* ---- FILTER BUTTON ACTIVE ---- */
+    .flt-active {
+      background: #1e3f7a !important;
+      color: white !important;
+    }
+
+    /* ---- TOAST ---- */
+    #toast {
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    /* ---- PULSE ---- */
+    @keyframes pulse-dot {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.3;
+      }
+    }
+
+    .pulse-dot {
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+
+    /* ---- SMOOTH TRANSITIONS ---- */
+    .kpi-value {
+      transition: all 0.3s ease;
+    }
+
+    .tab-panel {
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* ---- CARD HOVER ---- */
+    .dl-card:hover {
+      border-color: #1e3f7a;
+      box-shadow: 0 4px 20px rgba(30, 63, 122, 0.08);
+      transform: translateY(-1px);
+    }
+
+    .dl-card {
+      transition: all 0.2s ease;
+    }
+
+    /* ---- STICKY COLUMNS (freeze No + Invoice + EMPLID) ---- */
+    .tbl-freeze-no {
+      position: sticky;
+      left: 0;
+      z-index: 3;
+      background: inherit;
+      min-width: 44px;
+      max-width: 44px;
+      width: 44px;
+    }
+
+    .tbl-freeze-inv {
+      position: sticky;
+      left: 44px;
+      z-index: 3;
+      background: inherit;
+      min-width: 146px;
+      max-width: 146px;
+      width: 146px;
+    }
+
+    .tbl-freeze-emp {
+      position: sticky;
+      left: 190px;
+      z-index: 3;
+      background: inherit;
+      min-width: 100px;
+      max-width: 100px;
+      width: 100px;
+    }
+
+    thead .tbl-freeze-no,
+    thead .tbl-freeze-inv,
+    thead .tbl-freeze-emp {
+      z-index: 5;
+      background: rgba(248, 250, 252, 0.97);
+    }
+
+    /* Right shadow on last frozen col */
+    .tbl-freeze-emp {
+      box-shadow: 4px 0 8px -2px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Column group headers */
+    .col-group-ps {
+      background: #f0fdf4;
+      color: #166534;
+    }
+
+    .col-group-sap {
+      background: #eff6ff;
+      color: #1e40af;
+    }
+
+    .col-group-rec {
+      background: #fefce8;
+      color: #854d0e;
+    }
+
+    /* Diff highlight on cell */
+    .cell-diff {
+      background: #fff7ed;
+      color: #c2410c;
+      font-weight: 700;
+    }
+
+    /* Mini pill inside cell */
+    .diff-chip {
+      display: inline-block;
+      background: #fef3c7;
+      color: #b45309;
+      border: 1px solid #fde68a;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+
+    .diff-chip.chip-ok {
+      background: #f0fdf4;
+      color: #16a34a;
+      border-color: #bbf7d0;
+    }
+
+    /* ---- PHASE STEPPER ---- */
+    .stepper-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 20px 28px;
+      overflow-x: auto;
+    }
+
+    .stepper-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      position: relative;
+      cursor: pointer;
+      min-width: 130px;
+    }
+
+    /* Connector line between steps */
+    .stepper-item:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: calc(100% - 134px);
+      left: 134px;
+      height: 2px;
+      background: #e2e8f0;
+      transition: background 0.3s ease;
+      z-index: 0;
+    }
+
+    /* Done step → connector turns navy blue */
+    .stepper-item.completed:not(:last-child)::after {
+      background: #1e3f7a;
+    }
+
+    /* Circle */
+    .step-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 2px solid #e2e8f0;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
+      color: #94a3b8;
+      flex-shrink: 0;
+      transition: all 0.25s ease;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Active state — navy blue */
+    .stepper-item.active .step-circle {
+      background: #1e3f7a;
+      border-color: #1e3f7a;
+      color: white;
+      box-shadow: 0 4px 16px rgba(30, 63, 122, 0.30);
+    }
+
+    /* Completed state — GREEN ✓ */
+    .stepper-item.completed .step-circle {
+      background: #059669;
+      border-color: #059669;
+      color: white;
+      box-shadow: 0 2px 8px rgba(5, 150, 105, 0.25);
+    }
+
+    /* Labels */
+    .step-label {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .step-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #94a3b8;
+      line-height: 1.3;
+      transition: color 0.25s ease;
+    }
+
+    .step-sub {
+      font-size: 11px;
+      color: #cbd5e1;
+      line-height: 1.3;
+      transition: color 0.25s ease;
+    }
+
+    /* Active labels */
+    .stepper-item.active .step-title {
+      color: #1e3f7a;
+      font-weight: 700;
+    }
+
+    .stepper-item.active .step-sub {
+      color: #2563eb;
+    }
+
+    /* Completed labels — green */
+    .stepper-item.completed .step-title {
+      color: #059669;
+      font-weight: 700;
+    }
+
+    .stepper-item.completed .step-sub {
+      color: #059669;
+    }
+
+    /* ---- COLLAPSIBLE HOW-TO ---- */
+    .howto-panel {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+      opacity: 0;
+    }
+
+    .howto-panel.open {
+      max-height: 600px;
+      opacity: 1;
+    }
+
+    .howto-toggle-icon {
+      transition: transform 0.3s ease;
+    }
+
+    .howto-open .howto-toggle-icon {
+      transform: rotate(180deg);
+    }
+
+    /* ---- FILE VALIDATION ---- */
+    .dz-invalid {
+      border-color: #f43f5e !important;
+      background-color: #fff1f2 !important;
+    }
+
+    .dz-valid {
+      border-color: #22c55e !important;
+      background-color: #f0fdf4 !important;
+    }
+
+    /* ---- COLUMN VISIBILITY ---- */
+    .col-hidden {
+      display: none !important;
+    }
+
+    /* Compact table cells */
+    #compare-table th,
+    #compare-table td {
+      padding-top: 6px;
+      padding-bottom: 6px;
+      padding-left: 10px;
+      padding-right: 10px;
+      white-space: nowrap;
+      font-size: 11px;
+    }
+
+    /* Checkbox styles for dropdown */
+    .col-checkbox {
+      width: 14px;
+      height: 14px;
+      border-radius: 4px;
+      border: 1px solid #cbd5e1;
+      cursor: pointer;
+      accent-color: #2563eb;
+    }
+
+    .col-checkbox.chk-ps {
+      accent-color: #16a34a;
+    }
+
+    .col-checkbox.chk-sap {
+      accent-color: #2563eb;
+    }
+
+    /* Dropdown Animation */
+    .dropdown-menu {
+      transform-origin: top right;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .dropdown-hidden {
+      opacity: 0;
+      transform: scale(0.95);
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col antialiased">
+
+  <!-- ===== TOP NAVIGATION BAR ===== -->
+  <nav class="bg-navy-800 border-b border-navy-900 sticky top-0 z-40 shadow-lg">
+    <div class="w-full px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between h-16 items-center gap-4">
+
+        <!-- Brand -->
+        <div class="flex items-center gap-3 shrink-0">
+          <div
+            class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-navy-500 flex items-center justify-center shadow-md shrink-0">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-white font-bold text-base tracking-tight">SMART FBT</span>
+              <span
+                class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold bg-blue-500/30 text-blue-200 rounded-full border border-blue-400/30">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></span>
+                PHASE 1 ACTIVE
+              </span>
+            </div>
+            <p class="text-navy-300 text-[11px] font-medium hidden sm:block">Automated Benefit Tax Reconciliation &
+              Upload Tool</p>
+          </div>
+        </div>
+
+        <!-- Right actions -->
+        <div class="flex items-center gap-2 shrink-0">
+          <button id="btn-export-all" onclick="downloadBothReports()" disabled
+            class="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-xl shadow transition">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13z" />
+            </svg>
+            Download Report
+          </button>
+          <div
+            class="w-8 h-8 rounded-full bg-navy-600 border border-navy-500 text-white text-xs font-bold flex items-center justify-center cursor-default"
+            title="HR Finance User">HR</div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ===== PHASE STEPPER ===== -->
+  <div class="bg-white border-b border-slate-200 shadow-sm">
+    <div class="w-full px-4 sm:px-6 lg:px-8">
+      <div class="stepper-wrap">
+
+        <!-- Step 1: Upload Files -->
+        <div class="stepper-item completed" id="stepper-1" onclick="switchTab('upload')">
+          <div class="step-circle" id="step-circle-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <div class="step-label">
+            <div class="step-title">Upload Files</div>
+            <div class="step-sub" id="step-sub-1">SAP + PeopleSoft</div>
+          </div>
+        </div>
+
+        <!-- Step 2: Processing -->
+        <div class="stepper-item" id="stepper-2" onclick="switchTab('compare')">
+          <div class="step-circle" id="step-circle-2">
+            <span id="step-num-2">2</span>
+          </div>
+          <div class="step-label">
+            <div class="step-title">Processing</div>
+            <div class="step-sub" id="step-sub-2">Match SAP vs PS</div>
+          </div>
+        </div>
+
+        <!-- Step 3: Preview Results -->
+        <div class="stepper-item" id="stepper-3" onclick="switchTab('compare')">
+          <div class="step-circle" id="step-circle-3">
+            <span id="step-num-3">3</span>
+          </div>
+          <div class="step-label">
+            <div class="step-title">Preview Results</div>
+            <div class="step-sub" id="step-sub-3">Review data</div>
+          </div>
+        </div>
+
+        <!-- Step 4: Download -->
+        <div class="stepper-item" id="stepper-4" onclick="switchTab('summary')">
+          <div class="step-circle" id="step-circle-4">
+            <span id="step-num-4">4</span>
+          </div>
+          <div class="step-label">
+            <div class="step-title">Download</div>
+            <div class="step-sub" id="step-sub-4">2 reports (.zip)</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MAIN CONTENT ===== -->
+  <main class="w-full px-4 sm:px-6 lg:px-8 py-6 flex-1 space-y-6">
+
+    <!-- ========================================== -->
+    <!-- TAB 1: IMPORT FILES                        -->
+    <!-- ========================================== -->
+    <div id="panel-upload" class="tab-panel space-y-5">
+
+      <!-- Collapsible How SMART FBT Works -->
+      <div class="bg-white border border-blue-200 rounded-2xl shadow-sm overflow-hidden" id="howto-wrapper">
+        <!-- Header (always visible) -->
+        <button onclick="toggleHowTo()" id="howto-btn"
+          class="w-full flex items-center justify-between px-5 py-2 text-left hover:bg-blue-50/50 transition group">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <span class="text-sm font-bold text-blue-800">Cara Kerja SMART FBT &amp; Ketentuan Penggunaan</span>
+              <span class="ml-2 text-[10px] text-blue-500 font-medium">(klik untuk expand)</span>
+            </div>
+          </div>
+          <svg class="howto-toggle-icon w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        <!-- Collapsible Body -->
+        <div class="howto-panel" id="howto-panel">
+          <div class="px-5 pb-3 border-t border-blue-100 bg-blue-50/30">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3">
+
+              <!-- Cara Kerja -->
+              <div>
+                <h4 class="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Proses Rekonsiliasi
+                </h4>
+                <ol class="space-y-1.5 text-xs text-blue-900">
+                  <li class="flex gap-2"><span
+                      class="w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-[10px] font-bold flex items-center justify-center shrink-0">1</span>Upload
+                    file SAP dan PeopleSoft dalam format <code
+                      class="bg-blue-100 px-1 rounded font-mono">.xlsx / .xls / .csv</code></li>
+                  <li class="flex gap-2"><span
+                      class="w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-[10px] font-bold flex items-center justify-center shrink-0">2</span>Sistem
+                    mencocokkan berdasarkan <code class="bg-blue-100 px-1 rounded font-mono">REFERENCE</code> (SAP) ↔
+                    <code class="bg-blue-100 px-1 rounded font-mono">HMS_INVOICE_NBR</code> (PS)
+                  </li>
+                  <li class="flex gap-2"><span
+                      class="w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-[10px] font-bold flex items-center justify-center shrink-0">3</span>Preview
+                    hasil perbandingan di tabel interaktif (filter, sort, search)</li>
+                  <li class="flex gap-2"><span
+                      class="w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-[10px] font-bold flex items-center justify-center shrink-0">4</span>Unduh
+                    2 laporan rekonsiliasi <code class="bg-blue-100 px-1 rounded font-mono">.xlsx</code> (versi PS &amp;
+                    SAP)</li>
+                </ol>
+                <p class="mt-3 text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                  100% browser-only — data tidak dikirim ke server manapun.
+                </p>
+              </div>
+
+              <!-- Ketentuan Nama File -->
+              <div>
+                <h4 class="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Ketentuan Nama File
+                </h4>
+                <div class="space-y-2">
+                  <div class="bg-white border border-blue-200 rounded-lg p-2.5">
+                    <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">File SAP</p>
+                    <code
+                      class="text-xs text-navy-700 font-mono bg-blue-50 px-2 py-0.5 rounded block">HDC_FBT_SAP_[TYPE]_[PERIOD].xlsx</code>
+                    <p class="text-[10px] text-slate-500 mt-1">Contoh: <span
+                        class="font-mono text-slate-700">HDC_FBT_SAP_MBA_10Agt_9Sept26.xlsx</span></p>
+                    <p class="text-[10px] text-slate-400 mt-0.5">Kolom wajib: <span class="font-mono">REFERENCE, AMOUNT,
+                        EMPLID, ITEM</span></p>
+                  </div>
+                  <div class="bg-white border border-blue-200 rounded-lg p-2.5">
+                    <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">File PeopleSoft</p>
+                    <code
+                      class="text-xs text-navy-700 font-mono bg-blue-50 px-2 py-0.5 rounded block">HDC_FBT_PS_[TYPE]_[PERIOD].xlsx</code>
+                    <p class="text-[10px] text-slate-500 mt-1">Contoh: <span
+                        class="font-mono text-slate-700">HDC_FBT_PS_MBA_10Agt_9Sept26.xlsx</span></p>
+                    <p class="text-[10px] text-slate-400 mt-0.5">Kolom wajib: <span class="font-mono">HMS_INVOICE_NBR,
+                        AMOUNT, EMPLID, ITEM</span></p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Format & Ketentuan Tambahan -->
+              <div class="md:col-span-2">
+                <h4 class="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
+                  Ketentuan &amp; Catatan Penting
+                </h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] text-slate-700">
+                  <div class="flex gap-1.5 items-start"><span class="text-amber-500 shrink-0">⚠️</span>Header baris
+                    pertama harus berisi nama kolom (bukan data)</div>
+                  <div class="flex gap-1.5 items-start"><span class="text-blue-500 shrink-0">📋</span>Pastikan sheet
+                    aktif adalah sheet pertama pada file Excel</div>
+                  <div class="flex gap-1.5 items-start"><span class="text-blue-500 shrink-0">💰</span>Kolom <span
+                      class="font-mono mx-0.5">AMOUNT</span> harus berupa angka numerik (tidak ada format currency)
+                  </div>
+                  <div class="flex gap-1.5 items-start"><span class="text-emerald-600 shrink-0">✅</span>Invoice number
+                    harus unique per baris di masing-masing sistem</div>
+                </div>
+              </div>
+
+              <!-- Download Sample Template -->
+              <div class="md:col-span-2 pt-2 border-t border-blue-100">
+                <p class="text-xs font-bold text-blue-800 mb-2">📥 Download Template Contoh File</p>
+                <div class="flex flex-wrap gap-2">
+                  <button onclick="downloadSampleTemplate('sap')"
+                    class="flex items-center gap-2 px-4 py-2 bg-navy-800 hover:bg-navy-700 text-white text-xs font-semibold rounded-xl shadow-sm transition">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Template SAP (.xlsx)
+                  </button>
+                  <button onclick="downloadSampleTemplate('ps')"
+                    class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm transition">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Template PeopleSoft (.xlsx)
+                  </button>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1.5">File template sudah berisi contoh data dan format kolom
+                  yang benar untuk di-upload ke sistem.</p>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload Card -->
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <div
+          class="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+          <div>
+            <h2 class="text-base font-bold text-slate-800">Import Files Excel / CSV</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Upload both data source files. Supports format <code
+                class="bg-slate-100 px-1 rounded">.xlsx</code> · <code class="bg-slate-100 px-1 rounded">.xls</code> ·
+              <code class="bg-slate-100 px-1 rounded">.csv</code>
+            </p>
+          </div>
+          <button onclick="loadDemoData()"
+            class="flex items-center gap-1.5 px-3.5 py-2 bg-navy-50 hover:bg-navy-100 text-navy-700 border border-navy-200 rounded-xl text-xs font-semibold transition shadow-sm">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Load Sample Data (Demo)
+          </button>
+        </div>
+
+        <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+
+          <!-- PeopleSoft Dropzone -->
+          <div id="dz-ps" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'ps')"
+            class="relative border-2 border-dashed border-blue-300 bg-blue-50/40 rounded-2xl p-6 text-center flex flex-col items-center justify-center hover:bg-blue-50/70 transition group cursor-pointer"
+            onclick="document.getElementById('fi-ps').click()">
+            <input type="file" id="fi-ps" accept=".xlsx,.xls,.csv" onchange="onFileSelect(event,'ps')" class="hidden">
+
+            <div
+              class="w-14 h-14 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mb-3 shadow-inner group-hover:scale-105 transition">
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+
+            <span
+              class="px-2.5 py-0.5 text-[10px] font-bold bg-blue-200 text-blue-800 rounded-full mb-2 uppercase tracking-wider">File
+              01 · PeopleSoft HR</span>
+            <h3 id="ps-fname" class="font-bold text-sm text-slate-800">Click or Drag PeopleSoft File</h3>
+            <p id="ps-fdesc" class="text-xs text-slate-500 font-mono mt-1">Format: <span
+                class="font-bold text-blue-700">HDC_FBT_PS_[TYPE]_[PERIOD].xlsx</span></p>
+
+            <div id="ps-badge"
+              class="mt-4 bg-white/80 border border-slate-200 px-4 py-2 rounded-xl text-xs flex items-center gap-2 shadow-sm text-slate-500">
+              <span>Waiting for PeopleSoft file...</span>
+            </div>
+            <div id="ps-validation-msg" class="mt-2 text-[11px] hidden"></div>
+          </div>
+
+          <!-- SAP Dropzone -->
+          <div id="dz-sap" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'sap')"
+            class="relative border-2 border-dashed border-blue-300 bg-blue-50/40 rounded-2xl p-6 text-center flex flex-col items-center justify-center hover:bg-blue-50/70 transition group cursor-pointer"
+            onclick="document.getElementById('fi-sap').click()">
+            <input type="file" id="fi-sap" accept=".xlsx,.xls,.csv" onchange="onFileSelect(event,'sap')" class="hidden">
+
+            <div
+              class="w-14 h-14 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mb-3 shadow-inner group-hover:scale-105 transition">
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+
+            <span
+              class="px-2.5 py-0.5 text-[10px] font-bold bg-blue-200 text-blue-800 rounded-full mb-2 uppercase tracking-wider">File
+              02 · SAP Finance</span>
+            <h3 id="sap-fname" class="font-bold text-sm text-slate-800">Click or Drag SAP File</h3>
+            <p id="sap-fdesc" class="text-xs text-slate-500 font-mono mt-1">Format: <span
+                class="font-bold text-blue-700">HDC_FBT_SAP_[TYPE]_[PERIOD].xlsx</span></p>
+
+            <div id="sap-badge"
+              class="mt-4 bg-white/80 border border-slate-200 px-4 py-2 rounded-xl text-xs flex items-center gap-2 shadow-sm text-slate-500">
+              <span>Waiting for SAP file...</span>
+            </div>
+            <div id="sap-validation-msg" class="mt-2 text-[11px] hidden"></div>
+          </div>
+        </div>
+
+        <!-- Status & Processing Bar -->
+        <div class="px-6 pb-6">
+          <div id="upload-status-bar"
+            class="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 transition-colors duration-300">
+
+            <div class="flex items-center gap-3 text-xs text-slate-600 font-medium">
+              <!-- Animated Spinner (Hidden by default) -->
+              <svg id="status-spinner" class="w-5 h-5 text-navy-600 animate-spin hidden"
+                xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                </path>
+              </svg>
+              <!-- Static Dot -->
+              <span id="status-dot" class="w-2 h-2 rounded-full bg-slate-300"></span>
+              <span id="status-text">Please upload both files to start reconciliation.</span>
+            </div>
+
+            <button id="btn-process" onclick="runComparison()" disabled
+              class="flex items-center gap-2 bg-navy-800 hover:bg-navy-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-sm px-6 py-2.5 rounded-xl shadow transition">
+              <svg id="btn-icon-compare" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              Compare & Reconcile
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Legend Card -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Remarks Status Rekonsiliasi (4
+          Kategori)</h3>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+          <div class="flex items-start gap-2">
+            <span class="badge-matched px-2 py-0.5 font-bold text-[10px] shrink-0 mt-0.5"
+              style="border-radius: 20px;">MATCH</span>
+            <span class="text-slate-600">Found in <strong>PS & SAP</strong>, nominals <strong>match</strong></span>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="badge-excess-sap px-2 py-0.5 font-bold text-[10px] shrink-0 mt-0.5"
+              style="border-radius: 20px;">SAP &gt; PS</span>
+            <span class="text-slate-600">Found in both, SAP is <strong>greater</strong>
+              (Excess/Advance)</span>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="badge-excess-ps px-2 py-0.5 font-bold text-[10px] shrink-0 mt-0.5"
+              style="border-radius: 20px;">PS &gt; SAP</span>
+            <span class="text-slate-600">Ditemukan di keduanya, PS <strong>lebih besar</strong> (Klaim belum
+              terbayar)</span>
+          </div>
+          <div class="flex items-start gap-2 flex-col gap-1">
+            <div class="flex items-start gap-2">
+              <span class="badge-only-ps px-2 py-0.5 font-bold text-[10px] shrink-0" style="border-radius: 20px;">PSFT
+                Only</span>
+              <span class="text-slate-600">Present in PS, <strong>missing in SAP</strong></span>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="badge-only-sap px-2 py-0.5 font-bold text-[10px] shrink-0" style="border-radius: 20px;">SAP
+                Only</span>
+              <span class="text-slate-600">Present in SAP, <strong>missing in PS</strong></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 2: DATA COMPARE                        -->
+    <!-- ========================================== -->
+    <div id="panel-compare" class="tab-panel space-y-5 hidden">
+
+      <!-- KPI Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <!-- Card 1: Matching Invoices -->
+        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative">
+          <div class="flex justify-between items-start mb-2">
+            <p class="text-xs text-slate-500 font-semibold tracking-wide">Matching Invoices</p>
+            <div
+              class="w-6 h-6 bg-emerald-50 rounded-md flex items-center justify-center border border-emerald-100 shrink-0">
+              <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          </div>
+          <p id="kpi-match" class="text-2xl font-extrabold text-slate-900">0</p>
+          <p id="kpi-match-sub" class="text-[10px] text-emerald-600 font-bold mt-1">✓ 0% (0 Total Unik)</p>
+        </div>
+
+        <!-- Card 2: Total Plafon PeopleSoft -->
+        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative">
+          <div class="flex justify-between items-start mb-2">
+            <p class="text-xs text-slate-500 font-semibold tracking-wide">Total Plafon PeopleSoft</p>
+            <span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-[9px] font-bold shrink-0">PSFT</span>
+          </div>
+          <p id="kpi-ps-short" class="text-2xl font-extrabold text-slate-900">Rp 0</p>
+          <p id="kpi-ps-total" class="text-[10px] text-slate-400 font-mono mt-1">Rp 0,00</p>
+        </div>
+
+        <!-- Card 3: Total Pembayaran SAP -->
+        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative">
+          <div class="flex justify-between items-start mb-2">
+            <p class="text-xs text-slate-500 font-semibold tracking-wide">Total Pembayaran SAP</p>
+            <span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-[9px] font-bold shrink-0">SAP</span>
+          </div>
+          <p id="kpi-sap-short" class="text-2xl font-extrabold text-slate-900">Rp 0</p>
+          <p id="kpi-sap-total" class="text-[10px] text-slate-400 font-mono mt-1">Rp 0,00</p>
+        </div>
+
+        <!-- Card 4: Selisih (Excess Terkonfirmasi) -->
+        <div class="bg-white border border-amber-300 rounded-xl p-5 shadow-sm relative">
+          <div class="flex justify-between items-start mb-2">
+            <p class="text-xs text-amber-700 font-semibold tracking-wide">Selisih (Excess Terkonfirmasi)</p>
+            <span id="kpi-mismatch-count"
+              class="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md text-[9px] font-bold border border-amber-200 shrink-0">0
+              Invoice</span>
+          </div>
+          <p id="kpi-diff-short" class="text-2xl font-extrabold text-amber-800">Rp 0</p>
+          <p id="kpi-diff" class="text-[10px] text-amber-600 font-mono mt-1 font-bold">+Rp 0,00</p>
+        </div>
+      </div>
+
+      <!-- Filter & Search Bar -->
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm">
+        <div
+          class="relative z-20 px-5 py-4 border-b border-slate-100 flex flex-col md:flex-row justify-between md:items-center gap-3 bg-slate-50/60 rounded-t-2xl">
+          <div>
+            <h3 class="text-sm font-bold text-slate-800">Real-Time Comparison Table</h3>
+            <p class="text-xs text-slate-500">Matching <code class="bg-slate-200 px-1 rounded">PEOPLESOFT</code>
+              with <code class="bg-slate-200 px-1 rounded">SAP</code></p>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <!-- Search -->
+            <div class="relative">
+              <input type="text" id="search-input" oninput="doSearch(event)" placeholder="Search invoices / EMPLID..."
+                class="pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-xl w-56 focus:outline-none focus:ring-2 focus:ring-navy-400 bg-white shadow-sm">
+              <svg class="w-4 h-4 text-slate-400 absolute left-2.5 top-2" fill="none" stroke="currentColor"
+                viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+
+            <!-- Filter Pills -->
+            <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              <button onclick="setFilter('all')" id="flt-all"
+                class="flt-btn px-3 py-1 text-xs font-semibold rounded-lg bg-white text-navy-700 shadow-sm">All (<span
+                  id="cnt-all">0</span>)</button>
+              <button onclick="setFilter('match')" id="flt-match"
+                class="flt-btn px-3 py-1 text-xs font-medium rounded-lg text-slate-600 hover:bg-white/70">Match (<span
+                  id="cnt-match">0</span>)</button>
+              <button onclick="setFilter('mismatch')" id="flt-mismatch"
+                class="flt-btn px-3 py-1 text-xs font-medium rounded-lg text-slate-600 hover:bg-white/70">Mismatch
+                (<span id="cnt-mismatch">0</span>)</button>
+              <button onclick="setFilter('notfound')" id="flt-notfound"
+                class="flt-btn px-3 py-1 text-xs font-medium rounded-lg text-slate-600 hover:bg-white/70">Not Found
+                (<span id="cnt-notfound">0</span>)</button>
+            </div>
+
+            <!-- Columns Dropdown -->
+            <div class="relative">
+              <button onclick="toggleColumnDropdown(event)"
+                class="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl shadow-sm transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                </svg>
+                Filters
+                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              <!-- Dropdown Menu -->
+              <div id="col-dropdown"
+                class="dropdown-menu dropdown-hidden absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden">
+                <div class="p-3 bg-slate-50/80 border-b border-slate-100 flex justify-between items-center">
+                  <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Show/Hide Columns</span>
+                </div>
+
+                <div class="max-h-[300px] overflow-y-auto p-2 space-y-1">
+                  <!-- PS Group -->
+                  <div class="px-2 py-1.5 bg-green-50/50 rounded flex items-center gap-2 mb-1">
+                    <span class="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">📗 PeopleSoft</span>
+                  </div>
+                  <label
+                    class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
+                    <input type="checkbox" id="chk-ps-receipt" class="col-checkbox chk-ps"
+                      onchange="toggleColumn('ps-receipt')">
+                    <span class="text-xs font-medium text-slate-700">Tanggal Kuitansi</span>
+                  </label>
+                  <label
+                    class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
+                    <input type="checkbox" id="chk-ps-claimcat" class="col-checkbox chk-ps"
+                      onchange="toggleColumn('ps-claimcat')">
+                    <span class="text-xs font-medium text-slate-700">Claim Cat</span>
+                  </label>
+                  <label
+                    class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
+                    <input type="checkbox" id="chk-ps-medtype" class="col-checkbox chk-ps" checked
+                      onchange="toggleColumn('ps-medtype')">
+                    <span class="text-xs font-medium text-slate-700">Medical Type</span>
+                  </label>
+                  <label
+                    class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
+                    <input type="checkbox" id="chk-ps-memo" class="col-checkbox chk-ps"
+                      onchange="toggleColumn('ps-memo')">
+                    <span class="text-xs font-medium text-slate-700">Memo / RS</span>
+                  </label>
+                  <label
+                    class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
+                    <input type="checkbox" id="chk-ps-entitle" class="col-checkbox chk-ps"
+                      onchange="toggleColumn('ps-entitle')">
+                    <span class="text-xs font-medium text-slate-700">Tahun Entitlement</span>
+                  </label>
+                  <label
+                    class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
+                    <input type="checkbox" id="chk-ps-lines" class="col-checkbox chk-ps"
+                      onchange="toggleColumn('ps-lines')">
+                    <span class="text-xs font-medium text-slate-700"># Lines</span>
+                  </label>
+
+                  <div class="my-2 border-t border-slate-100"></div>
+
+                  <!-- SAP Group -->
+                  <div class="px-2 py-1.5 bg-blue-50/50 rounded flex items-center gap-2 mb-1">
+                    <span class="text-[10px] font-bold text-blue-700 uppercase tracking-wider">📘 SAP Finance</span>
+                  </div>
+                  <label
+                    class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
+                    <input type="checkbox" id="chk-sap-docnbr" class="col-checkbox chk-sap" checked
+                      onchange="toggleColumn('sap-docnbr')">
+                    <span class="text-xs font-medium text-slate-700">Doc Number</span>
+                  </label>
+                  <label
+                    class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
+                    <input type="checkbox" id="chk-sap-postdt" class="col-checkbox chk-sap"
+                      onchange="toggleColumn('sap-postdt')">
+                    <span class="text-xs font-medium text-slate-700">Tanggal Posting</span>
+                  </label>
+                  <label
+                    class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
+                    <input type="checkbox" id="chk-sap-company" class="col-checkbox chk-sap"
+                      onchange="toggleColumn('sap-company')">
+                    <span class="text-xs font-medium text-slate-700">Company</span>
+                  </label>
+                  <label
+                    class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
+                    <input type="checkbox" id="chk-sap-gltext" class="col-checkbox chk-sap"
+                      onchange="toggleColumn('sap-gltext')">
+                    <span class="text-xs font-medium text-slate-700">G/L Text</span>
+                  </label>
+                  <label
+                    class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
+                    <input type="checkbox" id="chk-sap-costctr" class="col-checkbox chk-sap"
+                      onchange="toggleColumn('sap-costctr')">
+                    <span class="text-xs font-medium text-slate-700">Cost Center</span>
+                  </label>
+                  <label
+                    class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
+                    <input type="checkbox" id="chk-sap-gllines" class="col-checkbox chk-sap"
+                      onchange="toggleColumn('sap-gllines')">
+                    <span class="text-xs font-medium text-slate-700"># G/L Lines</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div id="compare-table-wrap" class="overflow-x-auto">
+          <table id="compare-table" class="text-xs text-left w-full"
+            style="border-collapse:separate; border-spacing:0;">
+            <thead class="table-th">
+              <!-- Row 1: group headers -->
+              <tr style="font-size:9px; text-transform:uppercase; letter-spacing:0.06em;">
+                <th class="tbl-freeze-no  col-no  px-2 py-1 border-b border-slate-200" rowspan="2">No</th>
+                <th class="tbl-freeze-inv col-inv px-3 py-1 border-b border-slate-200" rowspan="2">Invoice / Ref</th>
+                <th class="tbl-freeze-emp col-emp px-3 py-1 border-b border-slate-200" rowspan="2">EMPLID</th>
+                <th id="grp-ps" class="col-group-ps  px-3 py-1 text-center border-b border-l border-green-200"
+                  colspan="2">📗 PeopleSoft</th>
+                <th id="grp-sap" class="col-group-sap  px-3 py-1 text-center border-b border-l border-blue-200"
+                  colspan="2">📘 SAP Finance</th>
+                <th id="grp-rec" class="col-group-rec  px-3 py-1 text-center border-b border-l border-amber-200"
+                  colspan="4">⚖️ Rekonsiliasi</th>
+              </tr>
+              <!-- Row 2: sub-column headers -->
+              <tr>
+                <!-- PS -->
+                <th class="col-ps-receipt  col-hidden col-group-ps px-3 py-1.5 border-l border-green-100">Tgl Kuitansi
+                </th>
+                <th class="col-ps-claimcat col-hidden col-group-ps px-3 py-1.5 border-l border-green-100 cursor-pointer"
+                  onclick="setSort('psClaimCat')">Claim Cat <span class="text-slate-300">⇅</span></th>
+                <th class="col-ps-medtype          col-group-ps px-3 py-1.5 border-l border-green-100">Medical Type</th>
+                <th class="col-ps-memo    col-hidden col-group-ps px-3 py-1.5 border-l border-green-100">Memo / RS</th>
+                <th class="col-ps-entitle  col-hidden col-group-ps px-3 py-1.5 border-l border-green-100 text-center">
+                  Thn Entitle</th>
+                <th class="col-ps-lines   col-hidden col-group-ps px-3 py-1.5 border-l border-green-100 text-center">#
+                  Lines PS</th>
+                <th
+                  class="col-ps-total             col-group-ps px-3 py-1.5 border-l border-green-100 text-right cursor-pointer"
+                  onclick="setSort('psTotal')">Total PS (IDR) <span class="text-slate-300">⇅</span></th>
+                <!-- SAP -->
+                <th class="col-sap-docnbr           col-group-sap px-3 py-1.5 border-l border-blue-100">Doc Number</th>
+                <th class="col-sap-postdt  col-hidden col-group-sap px-3 py-1.5 border-l border-blue-100">Tgl Posting
+                </th>
+                <th class="col-sap-company col-hidden col-group-sap px-3 py-1.5 border-l border-blue-100 text-center">
+                  Company</th>
+                <th class="col-sap-gltext  col-hidden col-group-sap px-3 py-1.5 border-l border-blue-100">G/L Text</th>
+                <th class="col-sap-costctr col-hidden col-group-sap px-3 py-1.5 border-l border-blue-100 text-center">
+                  Cost Center</th>
+                <th class="col-sap-gllines col-hidden col-group-sap px-3 py-1.5 border-l border-blue-100 text-center">#
+                  G/L Lines</th>
+                <th
+                  class="col-sap-total             col-group-sap px-3 py-1.5 border-l border-blue-100 text-right cursor-pointer"
+                  onclick="setSort('sapTotal')">Total SAP (IDR) <span class="text-slate-300">⇅</span></th>
+                <!-- Recon -->
+                <th class="col-rec-diff   col-group-rec px-3 py-1.5 border-l border-amber-100 text-right cursor-pointer"
+                  onclick="setSort('diff')">Selisih (IDR) <span class="text-slate-300">⇅</span></th>
+                <th class="col-rec-ket    col-group-rec px-3 py-1.5 border-l border-amber-100">Keterangan</th>
+                <th class="col-rec-status col-group-rec px-3 py-1.5 border-l border-amber-100 text-center">Status</th>
+                <th class="col-rec-detail col-group-rec px-3 py-1.5 border-l border-amber-100 text-center">Detail</th>
+              </tr>
+            </thead>
+            <tbody id="compare-tbody" class="divide-y divide-slate-100">
+              <tr>
+                <td colspan="18" class="text-center py-16 text-slate-400">
+                  No data available. Upload files in Step 1.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+
+        <!-- Pagination -->
+        <div
+          class="px-5 py-3.5 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-center gap-2">
+          <p class="text-[11px] text-slate-500 font-sans">
+            Showing <span id="pg-start" class="font-bold">0</span>–<span id="pg-end" class="font-bold">0</span>
+            of <span id="pg-total" class="font-bold">0</span> invoices
+          </p>
+          <div class="flex items-center gap-2">
+            <button onclick="prevPage()" id="btn-prev"
+              class="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition">←
+              Prev</button>
+            <span id="pg-info" class="text-xs font-semibold text-slate-600 px-2">Page 1/1</span>
+            <button onclick="nextPage()" id="btn-next"
+              class="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition">Next
+              →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Row -->
+      <div class="flex flex-col sm:flex-row justify-between items-center gap-3">
+        <button onclick="switchTab('upload')"
+          class="text-xs text-slate-500 hover:text-navy-700 font-medium flex items-center gap-1.5 transition">
+          ← Back to Import
+        </button>
+        <button onclick="switchTab('summary')"
+          class="flex items-center gap-2 bg-navy-800 hover:bg-navy-700 text-white font-semibold text-sm px-6 py-2.5 rounded-xl shadow transition">
+          Continue to Summary & Download →
+        </button>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 3: Summary & Download                  -->
+    <!-- ========================================== -->
+    <div id="panel-summary" class="tab-panel space-y-4 hidden">
+
+      <!-- ✅ Hero Section -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center">
+        <div
+          class="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-5 shadow-lg shadow-emerald-100"
+          style="animation: checkPop 0.5s ease forwards;">
+          <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 class="text-2xl font-extrabold text-slate-800 mb-3">Reconciliation Complete - 2 Reports Ready</h2>
+        <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-sm text-slate-500">
+          <span>Periode: <strong class="text-slate-700" id="sum-Period">-</strong></span>
+          <span class="text-slate-300">·</span>
+          <span class="flex items-center gap-1.5">
+            Type: <strong class="text-slate-700 ml-1" id="sum-Type">-</strong>
+          </span>
+          <span class="text-slate-300">·</span>
+          <span>Generated: <strong class="text-slate-700 font-mono text-xs" id="sum-ts">-</strong></span>
+        </div>
+        <!-- <p class="text-[10px] text-slate-400 font-mono mt-2">Processed by browser (SheetJS + ExcelJS) · No data sent to any server</p> -->
+      </div>
+
+      <!-- KPI Cards - 5 columns -->
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+
+        <!-- Total Unique Invoices -->
+        <div class="bg-white rounded-xl border-l-4 border-navy-600 border border-slate-100 shadow-sm p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-7 h-7 bg-navy-100 rounded-lg flex items-center justify-center">
+              <svg class="w-4 h-4 text-navy-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Invoices</span>
+          </div>
+          <div id="s-total" class="text-2xl font-extrabold text-navy-700">0</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">unique invoices processed</div>
+        </div>
+
+        <!-- Matched -->
+        <div class="bg-white rounded-xl border-l-4 border-emerald-500 border border-slate-100 shadow-sm p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-7 h-7 bg-emerald-100 rounded-lg flex items-center justify-center">
+              <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Matched</span>
+          </div>
+          <div id="s-match" class="text-2xl font-extrabold text-emerald-600">0</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">invoices matched</div>
+        </div>
+
+        <!-- Mismatch -->
+        <div class="bg-white rounded-xl border-l-4 border-amber-400 border border-slate-100 shadow-sm p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-7 h-7 bg-amber-100 rounded-lg flex items-center justify-center">
+              <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+            </div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Mismatch</span>
+          </div>
+          <div id="s-mismatch" class="text-2xl font-extrabold text-amber-600">0</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">need review</div>
+        </div>
+
+        <!-- Not Found -->
+        <div class="bg-white rounded-xl border-l-4 border-purple-400 border border-slate-100 shadow-sm p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-7 h-7 bg-purple-100 rounded-lg flex items-center justify-center">
+              <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Not Found</span>
+          </div>
+          <div id="s-notfound" class="text-2xl font-extrabold text-purple-600">0</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">unmatched invoices</div>
+        </div>
+
+        <!-- Net Difference -->
+        <div class="bg-navy-900 rounded-xl border border-navy-700 shadow-sm p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-7 h-7 bg-navy-700 rounded-lg flex items-center justify-center">
+              <svg class="w-4 h-4 text-navy-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-navy-300">Net Difference</span>
+          </div>
+          <div id="kpi-diff" class="text-lg font-extrabold text-amber-400 leading-tight">Rp 0</div>
+          <div class="text-[10px] text-navy-400 mt-0.5">SAP vs PeopleSoft</div>
+          <div class="text-[10px] text-amber-500 font-bold mt-3">Grand total gap</div>
+        </div>
+      </div>
+
+      <!-- Financial Summary Table -->
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <div class="px-5 py-4 bg-slate-50 border-b border-slate-100">
+          <h3 class="text-sm font-bold text-slate-800">Financial Summary</h3>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-left">
+            <thead class="bg-slate-100 text-slate-600 font-semibold text-[10px] uppercase tracking-wider">
+              <tr>
+                <th class="px-5 py-3">Parameter</th>
+                <th class="px-5 py-3 text-right">PeopleSoft (Plafon)</th>
+                <th class="px-5 py-3 text-right">SAP (Realized Payment)</th>
+                <th class="px-5 py-3 text-right">Mismatch (SAP–PS)</th>
+                <th class="px-5 py-3">Remarks</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 font-mono">
+              <tr>
+                <td class="px-5 py-3 font-sans font-medium text-slate-800">Invoice Matched</td>
+                <td id="fin-match-ps" class="px-5 py-3 text-right text-slate-700">Rp 0</td>
+                <td id="fin-match-sap" class="px-5 py-3 text-right font-bold text-slate-900">Rp 0</td>
+                <td class="px-5 py-3 text-right text-emerald-600 font-bold">Rp 0</td>
+                <td class="px-5 py-3 font-sans text-emerald-700">Nominals match between systems</td>
+              </tr>
+              <tr>
+                <td class="px-5 py-3 font-sans font-medium text-slate-800">Invoice Mismatch</td>
+                <td id="fin-mm-ps" class="px-5 py-3 text-right text-slate-700">Rp 0</td>
+                <td id="fin-mm-sap" class="px-5 py-3 text-right font-bold text-slate-900">Rp 0</td>
+                <td id="fin-mm-diff" class="px-5 py-3 text-right text-amber-600 font-bold">Rp 0</td>
+                <td class="px-5 py-3 font-sans text-amber-700">Further check required</td>
+              </tr>
+              <tr class="bg-navy-900">
+                <td class="px-5 py-3 font-sans font-bold text-white">GRAND TOTAL</td>
+                <td id="fin-total-ps" class="px-5 py-3 text-right font-bold text-navy-200">Rp 0</td>
+                <td id="fin-total-sap" class="px-5 py-3 text-right font-bold text-white">Rp 0</td>
+                <td id="fin-total-diff" class="px-5 py-3 text-right font-bold text-amber-300">Rp 0</td>
+                <td class="px-5 py-3 font-sans text-navy-300 text-[10px]">Grand Total</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Reports Ready to Download -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div class="mb-5">
+          <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+            Reports Ready to Download
+          </h3>
+          <p class="text-[11px] text-slate-400 mt-0.5">Both files are generated in-browser and ready to be downloaded
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+          <!-- PeopleSoft File Card -->
+          <div
+            class="flex items-center gap-3 bg-white border border-slate-200 hover:border-emerald-400 rounded-xl p-4 shadow-sm transition cursor-pointer group"
+            onclick="downloadReport('ps')">
+            <div
+              class="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0 group-hover:bg-emerald-100 transition">
+              <svg class="w-6 h-6 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="font-bold text-xs text-slate-800 truncate">Recon_FBT-<span
+                  id="dl-Type-ps">MBA</span>-PeopleSoft_<span id="dl-Period-ps">10Agt_9Sept26</span>.xlsx</div>
+              <div class="text-[10px] text-slate-500 mt-0.5">PeopleSoft base data + Difference vs SAP + Reconciliation
+                Status</div>
+              <div id="dl-ps-rows" class="text-[10px] text-emerald-600 font-mono font-semibold mt-1">0 rows · 0 unique
+                invoices</div>
+            </div>
+            <div
+              class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-emerald-100 flex items-center justify-center shrink-0 transition">
+              <svg class="w-4 h-4 text-slate-500 group-hover:text-emerald-600" fill="none" stroke="currentColor"
+                viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </div>
+          </div>
+
+          <!-- SAP File Card -->
+          <div
+            class="flex items-center gap-3 bg-white border border-slate-200 hover:border-blue-400 rounded-xl p-4 shadow-sm transition cursor-pointer group"
+            onclick="downloadReport('sap')">
+            <div
+              class="w-11 h-11 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition">
+              <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="font-bold text-xs text-slate-800 truncate">Recon_FBT-<span
+                  id="dl-Type-sap">MBA</span>-SAP_<span id="dl-Period-sap">10Agt_9Sept26</span>.xlsx</div>
+              <div class="text-[10px] text-slate-500 mt-0.5">SAP base data (per G/L line) + Difference vs PeopleSoft +
+                Status</div>
+              <div id="dl-sap-rows" class="text-[10px] text-blue-600 font-mono font-semibold mt-1">0 rows · 0 unique
+                invoices</div>
+            </div>
+            <div
+              class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-blue-100 flex items-center justify-center shrink-0 transition">
+              <svg class="w-4 h-4 text-slate-500 group-hover:text-blue-600" fill="none" stroke="currentColor"
+                viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Note + Download All ZIP -->
+        <div
+          class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-4 border-t border-slate-100">
+          <p class="text-[10px] text-slate-400 flex items-start gap-1.5">
+            <span class="text-amber-400 mt-0.5">💡</span>
+            2 reports generated in browser memory - no data stored on any server. Click a card to download individually.
+          </p>
+        </div>
+      </div>
+
+      <!-- Bottom Actions (preserved as-is) -->
+      <div class="flex justify-between items-center">
+        <button onclick="switchTab('compare')"
+          class="text-xs text-slate-500 hover:text-navy-700 font-medium flex items-center gap-1.5 transition">← Back to
+          Data Compare</button>
+        <button onclick="resetAll()"
+          class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition">🔄
+          Process New Files</button>
+      </div>
+    </div>
+
+
+  </main>
+
+  <!-- ===== MODAL DETAIL INVOICE ===== -->
+  <div id="modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden"
+    style="background: rgba(8,14,44,0.45);" onclick="if(event.target===this) closeModal()">
+    <div
+      class="bg-white rounded-2xl w-full max-w-[85rem] shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-fade-in">
+
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-navy-800 flex justify-between items-start bg-navy-900">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1">
+            <svg class="w-4 h-4 text-navy-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h3 id="modal-title" class="font-bold text-base text-white truncate">Invoice Detail</h3>
+          </div>
+          <p id="modal-sub" class="text-xs text-navy-300 mt-0.5 leading-relaxed">-</p>
+        </div>
+        <button onclick="closeModal()" class="ml-4 text-navy-400 hover:text-white p-1.5 rounded-lg transition shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Modal Body (scrollable) -->
+      <div id="modal-body" class="p-6 overflow-y-auto flex-1 text-xs bg-slate-50"></div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3.5 bg-white border-t border-slate-200 flex justify-between items-center">
+        <p class="text-[10px] text-slate-400 font-mono">Scroll to view all records · Click outside or press ESC to close
+        </p>
+        <button onclick="closeModal()"
+          class="px-5 py-2 bg-navy-800 hover:bg-navy-700 text-white rounded-xl text-xs font-semibold transition shadow-sm">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TOAST ===== -->
+  <div id="toast"
+    class="fixed bottom-6 right-6 bg-navy-900 text-white text-xs px-4 py-3 rounded-xl shadow-2xl z-50 flex items-center gap-2 max-w-sm">
+    <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+    </svg>
+    <span id="toast-text">-</span>
+  </div>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="bg-white border-t border-slate-200 py-3 mt-auto">
+    <div
+      class="w-full px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-2 text-[10px] text-slate-400">
+      <!-- Bottom Left: Browser-only badge -->
+      <div class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+        <span class="font-mono">Browser-only · No server · Edge Compatible</span>
+      </div>
+      <!-- Bottom Right: Copyright -->
+      <p>© 2026 SMART FBT · Automated Benefit Tax Reconciliation &amp; Upload Tool</p>
+    </div>
+  </footer>
+
+  <!-- ===== JAVASCRIPT ===== -->
+  <script src="app.js"></script>
+</body>
+
+</html>
