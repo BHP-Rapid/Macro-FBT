@@ -8,12 +8,14 @@
 let currentDataType = 'MBA';
 let rawPsRows  = [];   // Raw parsed rows from PeopleSoft file
 let rawSapRows = [];   // Raw parsed rows from SAP file
+let psFileState  = null; // { file, cleanRows, profile, fmt }
+let sapFileState = null; // { file, cleanRows, profile, fmt }
 let reconData  = [];   // Final reconciliation result array
 let filteredData = []; // Data after filter/search
 let currentFilter = 'all';
 let searchQuery   = '';
 let currentPage   = 1;
-const PAGE_SIZE   = 15;
+let pageSize      = 10;
 let sortCol = 'none';
 let sortAsc = true;
 
@@ -25,6 +27,11 @@ let sapMap = new Map(); // key: REFERENCE      -> { persNo, totalGL, lines[] }
 // TAB / PANEL NAVIGATION
 // ============================================================
 function switchTab(tab) {
+  if (tab !== 'upload' && reconData.length === 0) {
+    showToast('⚠️ Silakan upload file dan jalankan rekonsiliasi terlebih dahulu.');
+    return;
+  }
+
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
   document.querySelectorAll('.tab-nav').forEach(b => {
     b.classList.remove('border-blue-400','text-blue-300');
@@ -38,6 +45,14 @@ function switchTab(tab) {
     btn.classList.add('border-blue-400','text-blue-300');
   }
   updateStepper(tab);
+}
+
+function handleStepperClick(tab, stepNum) {
+  if (stepNum > 1 && reconData.length === 0) {
+    showToast('⚠️ Silakan upload file dan jalankan rekonsiliasi terlebih dahulu.');
+    return;
+  }
+  switchTab(tab);
 }
 
 // ============================================================
@@ -57,22 +72,38 @@ function updateStepper(tab) {
     const circle = document.getElementById('step-circle-' + i);
     if (!item || !circle) continue;
 
-    if (i < currentStep) {
-      // COMPLETED — green circle + checkmark
-      item.className   = 'stepper-item completed';
-      circle.innerHTML = checkSVG;
-    } else if (i === currentStep) {
-      // ACTIVE — navy blue circle with number
-      item.className   = 'stepper-item active';
-      circle.innerHTML = '<span>' + i + '</span>';
+    if (reconData.length === 0) {
+      if (i === 1) {
+        item.className = 'stepper-item active';
+        circle.innerHTML = '<span>1</span>';
+      } else {
+        item.className = 'stepper-item disabled';
+        circle.innerHTML = '<span>' + i + '</span>';
+      }
     } else {
-      // PENDING — gray circle with number
-      item.className   = 'stepper-item';
-      circle.innerHTML = '<span>' + i + '</span>';
+      // Data is present
+      if (i < currentStep) {
+        // COMPLETED — green circle + checkmark
+        item.className   = 'stepper-item completed';
+        circle.innerHTML = checkSVG;
+      } else if (i === currentStep) {
+        // ACTIVE — navy blue circle with number
+        item.className   = 'stepper-item active';
+        circle.innerHTML = '<span>' + i + '</span>';
+      } else {
+        // UNLOCKED FUTURE STEP
+        item.className   = 'stepper-item';
+        circle.innerHTML = '<span>' + i + '</span>';
+      }
     }
   }
 
   // Update subtitles dynamically
+  const sub1 = document.getElementById('step-sub-1');
+  if (sub1) {
+    if (reconData.length > 0) sub1.textContent = 'Uploaded & Ready';
+    else sub1.textContent = 'SAP + PeopleSoft';
+  }
   if (tab === 'compare' && reconData.length > 0) {
     const sub3 = document.getElementById('step-sub-3');
     if (sub3) sub3.textContent = reconData.length + ' records';
@@ -168,7 +199,7 @@ function downloadSampleTemplate(type) {
 }
 
 // ============================================================
-// FILE NAME VALIDATION
+// SMART MULTI-VARIANT FILE DETECTION & NORMALIZATION
 // ============================================================
 function validateFileName(fileName, type) {
   // Expected: HDC_FBT_SAP_[TYPE]_[PERIOD].ext  or  HDC_FBT_PS_[TYPE]_[PERIOD].ext
@@ -179,25 +210,188 @@ function validateFileName(fileName, type) {
   return { validName, validExt, ok: validName && validExt };
 }
 
-function showFileValidation(type, fileName) {
-  const dz  = document.getElementById('dz-' + type);
-  const msg = document.getElementById(type + '-validation-msg');
-  if (!dz || !msg) return;
-
-  const result = validateFileName(fileName, type);
-  dz.classList.remove('dz-valid','dz-invalid','border-blue-300','bg-blue-50/40');
-  msg.classList.remove('hidden','text-emerald-600','text-rose-600');
-
-  if (result.ok) {
-    dz.classList.add('dz-valid');
-    msg.className  = 'mt-2 text-[11px] text-emerald-700 font-semibold flex items-center gap-1';
-    msg.innerHTML  = '✅ Nama file sesuai format.';
-  } else {
-    dz.classList.add('dz-invalid');
-    msg.className  = 'mt-2 text-[11px] text-rose-700 font-semibold flex items-center gap-1 flex-wrap';
-    const expectedPrefix = type === 'sap' ? 'HDC_FBT_SAP_' : 'HDC_FBT_PS_';
-    msg.innerHTML  = `⚠️ Nama file tidak sesuai format. Format yang diharapkan: <span class="font-mono bg-rose-100 px-1 rounded">${expectedPrefix}[TYPE]_[PERIOD].xlsx</span>`;
+function normalizeHeaderName(raw) {
+  if (!raw) return '';
+  let str = String(raw).trim().toUpperCase();
+  // Strip parenthetical notes, e.g. "HMS_MEDICAL_CD (Cek TER...)" -> "HMS_MEDICAL_CD"
+  const parenIdx = str.indexOf('(');
+  if (parenIdx > -1) {
+    const mainPart = str.substring(0, parenIdx).trim();
+    if (mainPart) str = mainPart;
   }
+  return str.replace(/\s+/g, '_');
+}
+
+function findHeaderRowIndex(rows) {
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const row = rows[i];
+    if (!Array.isArray(row)) continue;
+    const normalized = row.map(normalizeHeaderName);
+    const isPS = normalized.some(h => 
+      h === 'EMPLID' || h === 'EMPL_ID' || h === 'HMS_INVOICE_NBR' || h === 'ECS_RMB_SAP_REF' || h === 'ECS_RMB_TRANSID' || h === 'HMS_FSA_TRANS_ID'
+    );
+    const isSAP = normalized.some(h => 
+      h === 'HMS_FBT_SEQNBR' || h === 'REFERENCE' || h === 'REFERENCE_NUMBER' || h === 'HMS_PERS_NO' || h === 'HMS_GL_AMOUNT' || h === 'HMS_DOC_NBR'
+    );
+    if (isPS || isSAP) return i;
+  }
+  return 0;
+}
+
+function detectFileProfile(rows) {
+  if (!rows || rows.length < 1) {
+    return { valid: false, system: 'unknown', reason: 'File kosong atau tidak memiliki data.' };
+  }
+
+  const hdrIdx = findHeaderRowIndex(rows);
+  const headerRow = rows[hdrIdx] || [];
+  const normalized = headerRow.map(normalizeHeaderName);
+
+  // Check PeopleSoft signatures
+  const hasEmplid   = normalized.some(h => h === 'EMPLID' || h === 'EMPL_ID');
+  const hasPsMba    = normalized.some(h => h === 'HMS_INVOICE_NBR');
+  const hasPsCb     = normalized.some(h => h === 'ECS_RMB_SAP_REF' || h === 'ECS_RMB_TRANSID');
+  const hasPsFsa    = normalized.some(h => h === 'HMS_FSA_TRANS_ID');
+  const hasPsAnyMed = normalized.some(h => h === 'HMS_MEDICAL_CD' || h === 'HMS_MBA_CLAIM_CAT' || h === 'HMS_REIMBURSE_AMT');
+
+  // Check SAP signatures
+  const hasSapRef    = normalized.some(h => h === 'REFERENCE' || h === 'REFERENCE_NUMBER' || h === 'REFERENCE_CODE');
+  const hasSapAssign = normalized.some(h => h === 'HMS_ASSIGNMENT');
+  const hasSapPers   = normalized.some(h => h === 'HMS_PERS_NO');
+  const hasSapGl     = normalized.some(h => h === 'HMS_GL_AMOUNT');
+  const hasSapSeq    = normalized.some(h => h === 'HMS_FBT_SEQNBR' || h === 'HMS_DOC_NBR');
+
+  let psScore = 0;
+  let psModule = 'MBA';
+  if (hasEmplid) psScore += 2;
+  if (hasPsMba) { psScore += 4; psModule = 'MBA'; }
+  if (hasPsCb)  { psScore += 4; psModule = 'CB'; }
+  if (hasPsFsa) { psScore += 4; psModule = 'FSA'; }
+  if (hasPsAnyMed) psScore += 2;
+
+  let sapScore = 0;
+  if (hasSapRef) sapScore += 3;
+  if (hasSapAssign) sapScore += 2;
+  if (hasSapPers) sapScore += 2;
+  if (hasSapGl) sapScore += 3;
+  if (hasSapSeq) sapScore += 2;
+
+  if (psScore >= 3 && psScore > sapScore) {
+    const keyCol = hasPsMba ? 'HMS_INVOICE_NBR' : (hasPsCb ? 'ECS_RMB_SAP_REF' : (hasPsFsa ? 'HMS_FSA_TRANS_ID' : 'EMPLID'));
+    return {
+      valid: true,
+      system: 'ps',
+      module: psModule,
+      headerIndex: hdrIdx,
+      label: `PeopleSoft ${psModule}`,
+      keyCol: keyCol,
+      summary: `PeopleSoft (${psModule}) · Kunci: ${keyCol}`
+    };
+  }
+
+  if (sapScore >= 3 && sapScore > psScore) {
+    const keyCol = hasSapRef ? 'REFERENCE' : (hasSapAssign ? 'HMS_ASSIGNMENT' : 'REFERENCE');
+    const sapMod = hasSapAssign && !hasSapRef ? 'FSA' : psModule;
+    return {
+      valid: true,
+      system: 'sap',
+      module: sapMod,
+      headerIndex: hdrIdx,
+      label: 'SAP Finance',
+      keyCol: keyCol,
+      summary: `SAP Finance · Kunci: ${keyCol}`
+    };
+  }
+
+  return {
+    valid: false,
+    system: 'unknown',
+    headerIndex: hdrIdx,
+    reason: 'Kolom tidak dikenali sebagai format FBT PeopleSoft maupun SAP Finance.'
+  };
+}
+
+function updateDropzoneUI(type) {
+  const st = type === 'ps' ? psFileState : sapFileState;
+  const dz = document.getElementById('dz-' + type);
+  const badge = document.getElementById(type + '-badge');
+  const msg = document.getElementById(type + '-validation-msg');
+  const fname = document.getElementById(type + '-fname');
+  const fdesc = document.getElementById(type + '-fdesc');
+
+  if (!st || !st.profile) {
+    resetDropzoneUI(type);
+    return;
+  }
+
+  const validRows = Math.max(0, st.cleanRows.length - 1 - st.profile.headerIndex);
+  const sizeFmt = (st.file.size / 1024 / 1024).toFixed(2) + ' MB';
+
+  if (fname) fname.textContent = st.file.name;
+  if (fdesc) fdesc.textContent = `${st.fmt} · ${sizeFmt} · ${validRows.toLocaleString('id-ID')} rows`;
+
+  dz.classList.remove('dz-valid','dz-invalid','dz-warn','border-blue-300','bg-blue-50/40');
+  msg.classList.remove('hidden');
+
+  if (!st.profile.valid) {
+    // Completely invalid file
+    dz.classList.add('dz-invalid');
+    badge.innerHTML = `<span class="text-rose-700 font-bold flex items-center gap-1.5"><svg class="w-4 h-4 text-rose-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg> ❌ Format Kolom Tidak Dikenali</span>`;
+    msg.className = 'mt-2 text-[11px] text-rose-800 bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-left';
+    msg.innerHTML = `⚠️ <strong>Bukan file FBT valid</strong>: Kolom transaksi FBT tidak ditemukan. Harap pastikan file memuat kolom ${type === 'ps' ? 'EMPLID dan HMS_INVOICE_NBR / ECS_RMB_SAP_REF' : 'REFERENCE / HMS_ASSIGNMENT dan HMS_PERS_NO'}.`;
+  } else if (st.profile.system !== type) {
+    // Swapped file!
+    dz.classList.add('dz-warn');
+    badge.innerHTML = `<span class="text-amber-800 font-bold flex items-center gap-1.5"><svg class="w-4 h-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg> ⚠️ Terdeteksi: ${st.profile.label}</span>`;
+    msg.className = 'mt-2 text-[11px] text-amber-900 bg-amber-50 border border-amber-300 rounded-xl p-2.5 flex flex-col sm:flex-row items-center justify-between gap-2 shadow-sm text-left';
+    msg.innerHTML = `
+      <div class="flex items-center gap-1.5">
+        <span class="text-base shrink-0">⚠️</span>
+        <span>File ini berisi data <strong>${st.profile.label}</strong>, bukan ${type === 'ps' ? 'PeopleSoft' : 'SAP Finance'}.</span>
+      </div>
+      <button type="button" onclick="event.stopPropagation(); swapUploadedFiles();" 
+        class="px-2.5 py-1 bg-amber-700 hover:bg-amber-800 text-white font-bold text-[10px] rounded-lg shadow transition whitespace-nowrap shrink-0">
+        🔀 Tukar Posisi File
+      </button>
+    `;
+  } else {
+    // Valid and matches!
+    dz.classList.add('dz-valid');
+    badge.innerHTML = `<span class="text-emerald-700 font-semibold flex items-center gap-1.5"><svg class="w-4 h-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> ✓ ${st.profile.summary} (${validRows.toLocaleString('id-ID')} baris)</span>`;
+    msg.className = 'mt-2 text-[11px] text-emerald-700 font-semibold flex items-center gap-1';
+    msg.innerHTML = `✅ Terverifikasi: Data ${st.profile.label} cocok untuk kotak ini.`;
+  }
+}
+
+function resetDropzoneUI(type) {
+  const dz = document.getElementById('dz-' + type);
+  const msg = document.getElementById(type + '-validation-msg');
+  const fname = document.getElementById(type + '-fname');
+  const fdesc = document.getElementById(type + '-fdesc');
+  const badge = document.getElementById(type + '-badge');
+
+  if (dz) {
+    dz.classList.remove('dz-valid','dz-invalid','dz-warn','border-blue-300','bg-blue-50/40');
+    dz.classList.add('border-blue-300','bg-blue-50/40');
+  }
+  if (fname) fname.textContent = type === 'ps' ? 'Click or Drag PeopleSoft File' : 'Click or Drag SAP File';
+  if (fdesc) fdesc.innerHTML = `Format: <span class="font-bold text-blue-700">HDC_FBT_${type.toUpperCase()}_[TYPE]_[PERIOD].xlsx</span>`;
+  if (badge) badge.innerHTML = `<span>Waiting for ${type === 'ps' ? 'PeopleSoft' : 'SAP'} file...</span>`;
+  if (msg) { msg.textContent = ''; msg.classList.add('hidden'); }
+}
+
+function swapUploadedFiles() {
+  const temp = psFileState;
+  psFileState = sapFileState;
+  sapFileState = temp;
+
+  rawPsRows = psFileState ? psFileState.cleanRows : [];
+  rawSapRows = sapFileState ? sapFileState.cleanRows : [];
+
+  updateDropzoneUI('ps');
+  updateDropzoneUI('sap');
+  checkReady();
+  showToast('🔀 Posisi kedua file berhasil ditukar!');
 }
 
 // ============================================================
@@ -274,48 +468,93 @@ function processFile(file, type) {
 }
 
 function handleParsedRows(rows, file, type, fmt) {
-  const sizeFmt = (file.size / 1024 / 1024).toFixed(2) + ' MB';
-  const validRows = Math.max(0, rows.length - 1);
+  // Filter out blank/ghost rows (rows where all cells are empty or whitespace)
+  const cleanRows = rows.filter(r => 
+    Array.isArray(r) && r.some(c => c !== null && c !== undefined && String(c).trim() !== '')
+  );
 
-  // Show file name validation
-  showFileValidation(type, file.name);
+  const profile = detectFileProfile(cleanRows);
+  const stateObj = { file, cleanRows, fmt, profile };
 
   if (type === 'ps') {
-    rawPsRows = rows;
-    document.getElementById('ps-fname').textContent = file.name;
-    document.getElementById('ps-fdesc').textContent = `${fmt} · ${sizeFmt} · ${validRows.toLocaleString('id-ID')} rows`;
-    document.getElementById('ps-badge').innerHTML =
-      `<span class="text-emerald-700 font-semibold">✓ ${validRows.toLocaleString('id-ID')} PeopleSoft Rows Ready</span>`;
+    psFileState = stateObj;
+    rawPsRows = cleanRows;
   } else {
-    rawSapRows = rows;
-    document.getElementById('sap-fname').textContent = file.name;
-    document.getElementById('sap-fdesc').textContent = `${fmt} · ${sizeFmt} · ${validRows.toLocaleString('id-ID')} rows`;
-    document.getElementById('sap-badge').innerHTML =
-      `<span class="text-blue-700 font-semibold">✓ ${validRows.toLocaleString('id-ID')} SAP Rows Ready</span>`;
+    sapFileState = stateObj;
+    rawSapRows = cleanRows;
   }
+
+  updateDropzoneUI(type);
+
+  // If the other dropzone already has a file, also refresh its UI
+  const otherType = type === 'ps' ? 'sap' : 'ps';
+  const otherState = otherType === 'ps' ? psFileState : sapFileState;
+  if (otherState) {
+    updateDropzoneUI(otherType);
+  }
+
   checkReady();
-  showToast('✓ File loaded successfully: ' + file.name);
+  showToast('✓ File ' + file.name + ' berhasil dimuat.');
 }
 
 function checkReady() {
-  const ready = rawPsRows.length > 0 && rawSapRows.length > 0;
   const btn = document.getElementById('btn-process');
   const dot = document.getElementById('status-dot');
   const txt = document.getElementById('status-text');
 
+  const psReady = psFileState && psFileState.profile && psFileState.profile.valid && psFileState.profile.system === 'ps';
+  const sapReady = sapFileState && sapFileState.profile && sapFileState.profile.valid && sapFileState.profile.system === 'sap';
+
+  const ready = psReady && sapReady;
   btn.disabled = !ready;
+
   if (ready) {
     dot.className = 'w-2 h-2 rounded-full bg-emerald-500 pulse-dot';
-    txt.textContent = 'Kedua file siap! Klik tombol "Bandingkan & Rekonsiliasi" untuk memulai.';
+    txt.textContent = `Kedua file valid (${psFileState.profile.label} & ${sapFileState.profile.label})! Klik tombol "Compare & Reconcile" untuk memulai.`;
     txt.className = 'text-emerald-700 font-semibold text-xs';
-  } else if (rawPsRows.length > 0) {
-    dot.className = 'w-2 h-2 rounded-full bg-amber-500';
-    txt.textContent = 'PeopleSoft file ready. Waiting for SAP file...';
-    txt.className = 'text-amber-700 text-xs';
-  } else if (rawSapRows.length > 0) {
-    dot.className = 'w-2 h-2 rounded-full bg-amber-500';
-    txt.textContent = 'SAP file ready. Waiting for PeopleSoft file...';
-    txt.className = 'text-amber-700 text-xs';
+  } else {
+    const psHasFile = !!psFileState;
+    const sapHasFile = !!sapFileState;
+
+    if (psHasFile && sapHasFile) {
+      if (psFileState.profile?.system === 'sap' && sapFileState.profile?.system === 'ps') {
+        dot.className = 'w-2 h-2 rounded-full bg-amber-500 animate-pulse';
+        txt.innerHTML = '⚠️ <strong>File tertukar!</strong> PeopleSoft dan SAP terbalik posisinya. Klik tombol "Tukar Posisi File".';
+        txt.className = 'text-amber-800 text-xs';
+      } else if (!psFileState.profile?.valid || !sapFileState.profile?.valid) {
+        dot.className = 'w-2 h-2 rounded-full bg-rose-500';
+        txt.textContent = 'Salah satu atau kedua file tidak memiliki struktur kolom FBT yang valid.';
+        txt.className = 'text-rose-700 text-xs';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-amber-500';
+        txt.textContent = 'Harap periksa posisi file: Tempatkan PeopleSoft di kotak PeopleSoft dan SAP di kotak SAP.';
+        txt.className = 'text-amber-700 text-xs';
+      }
+    } else if (psHasFile) {
+      if (psFileState.profile?.system !== 'ps') {
+        dot.className = 'w-2 h-2 rounded-full bg-amber-500';
+        txt.textContent = 'File di kotak PeopleSoft terdeteksi sebagai SAP Finance. Klik tukar atau unggah file PeopleSoft.';
+        txt.className = 'text-amber-700 text-xs';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-amber-500';
+        txt.textContent = `File PeopleSoft (${psFileState.profile.module}) siap. Menunggu file SAP Finance...`;
+        txt.className = 'text-amber-700 text-xs';
+      }
+    } else if (sapHasFile) {
+      if (sapFileState.profile?.system !== 'sap') {
+        dot.className = 'w-2 h-2 rounded-full bg-amber-500';
+        txt.textContent = 'File di kotak SAP terdeteksi sebagai PeopleSoft. Klik tukar atau unggah file SAP.';
+        txt.className = 'text-amber-700 text-xs';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-amber-500';
+        txt.textContent = 'File SAP Finance siap. Menunggu file PeopleSoft...';
+        txt.className = 'text-amber-700 text-xs';
+      }
+    } else {
+      dot.className = 'w-2 h-2 rounded-full bg-slate-300';
+      txt.textContent = 'Silakan upload kedua file untuk memulai rekonsiliasi.';
+      txt.className = 'text-slate-500 text-xs';
+    }
   }
 }
 
@@ -341,99 +580,124 @@ function runComparison() {
 
   // --- Process PeopleSoft ---
   psMap.clear();
-  const psHeader = rawPsRows[0] || [];
+  const psHdrIdx = (psFileState && psFileState.profile && psFileState.profile.headerIndex !== undefined)
+    ? psFileState.profile.headerIndex
+    : findHeaderRowIndex(rawPsRows);
+  const psHeader = rawPsRows[psHdrIdx] || [];
 
-  const psHeaderStr = psHeader.join(' ');
-  if (psHeaderStr.includes('HMS_FSA_TRANS_ID')) {
-    currentDataType = 'FSA';
-  } else if (psHeaderStr.includes('ECS_RMB_SAP_REF')) {
-    currentDataType = 'CB';
+  if (psFileState && psFileState.profile && psFileState.profile.module) {
+    currentDataType = psFileState.profile.module;
   } else {
-    currentDataType = 'MBA';
+    const psHeaderStr = psHeader.map(normalizeHeaderName).join(' ');
+    if (psHeaderStr.includes('HMS_FSA_TRANS_ID')) {
+      currentDataType = 'FSA';
+    } else if (psHeaderStr.includes('ECS_RMB_SAP_REF') || psHeaderStr.includes('ECS_RMB_TRANSID')) {
+      currentDataType = 'CB';
+    } else {
+      currentDataType = 'MBA';
+    }
   }
 
   let ps_inv, ps_emp, ps_reimb, ps_med, ps_Memo, ps_cat, ps_date, ps_entitle;
   if (currentDataType === 'FSA') {
-    ps_inv   = findCol(psHeader, 'HMS_FSA_TRANS_ID',  0);
-    ps_emp   = findCol(psHeader, 'EMPLID',            1);
-    ps_reimb = findCol(psHeader, 'HMS_FLX_UNIT',      8);
-    ps_med   = findCol(psHeader, 'HMS_FSA_ITEM',      7);
-    ps_Memo  = findCol(psHeader, 'DESCRLONG',         4);
-    ps_cat   = findCol(psHeader, 'HMS_FLX_YEAR',      2);
-    ps_date  = findCol(psHeader, 'RECEIPT_DT',        6);
-    ps_entitle = findCol(psHeader, 'HMS_FLX_YEAR',    2); // Dummy for FSA
+    ps_inv   = findColMulti(psHeader, ['HMS_FSA_TRANS_ID', 'FSA_TRANS_ID', 'TRANS_ID']);
+    ps_emp   = findColMulti(psHeader, ['EMPLID', 'EMPL_ID', 'EMPLOYEE_ID', 'PERS_NO']);
+    ps_reimb = findColMulti(psHeader, ['HMS_FLX_UNIT', 'FLX_UNIT', 'AMOUNT']);
+    ps_med   = findColMulti(psHeader, ['HMS_FSA_ITEM', 'FSA_ITEM']);
+    ps_Memo  = findColMulti(psHeader, ['DESCRLONG', 'DESCRIPTION', 'COMMENTS']);
+    ps_cat   = findColMulti(psHeader, ['HMS_FLX_YEAR', 'FLX_YEAR']);
+    ps_date  = findColMulti(psHeader, ['RECEIPT_DT', 'RECEIPT_DATE', 'DATE']);
+    ps_entitle = ps_cat;
   } else if (currentDataType === 'CB') {
-    ps_inv   = findCol(psHeader, 'ECS_RMB_SAP_REF',   6);
-    ps_emp   = findCol(psHeader, 'EMPLID',            1);
-    ps_reimb = findCol(psHeader, 'ECS_AMT_RMB',       12);
-    ps_med   = findCol(psHeader, 'EXPENSE_TYPE',      3);
-    ps_Memo  = findCol(psHeader, 'COMMENTS',          13);
-    ps_cat   = findCol(psHeader, 'EXPENSE_ITEM',      11);
-    ps_date  = findCol(psHeader, 'RECEIPT_DT',        9);
-    ps_entitle = findCol(psHeader, 'RECEIPT_DT',      9); // Dummy for CB
+    ps_inv   = findColMulti(psHeader, ['ECS_RMB_SAP_REF', 'ECS_RMB_TRANSID', 'SAP_REF', 'TRANSID']);
+    ps_emp   = findColMulti(psHeader, ['EMPLID', 'EMPL_ID', 'EMPLOYEE_ID', 'PERS_NO']);
+    ps_reimb = findColMulti(psHeader, ['ECS_AMT_RMB', 'AMT_RMB', 'AMOUNT']);
+    ps_med   = findColMulti(psHeader, ['EXPENSE_TYPE', 'EXP_TYPE']);
+    ps_Memo  = findColMulti(psHeader, ['COMMENTS', 'COMMENT', 'DESCRLONG']);
+    ps_cat   = findColMulti(psHeader, ['EXPENSE_ITEM', 'EXP_ITEM']);
+    ps_date  = findColMulti(psHeader, ['RECEIPT_DT', 'RECEIPT_DATE', 'DATE']);
+    ps_entitle = ps_date;
   } else {
-    ps_inv   = findCol(psHeader, 'HMS_INVOICE_NBR',   14);
-    ps_emp   = findCol(psHeader, 'EMPLID',            0);
-    ps_reimb = findCol(psHeader, 'HMS_Reimburse_AMT', 12);
-    ps_med   = findCol(psHeader, 'HMS_MEDICAL_CD',    3);
-    ps_Memo  = findCol(psHeader, 'HMS_Memo_LTR_NO',   10);
-    ps_cat   = findCol(psHeader, 'HMS_MBA_CLAIM_CAT', 6);
-    ps_date  = findCol(psHeader, 'RECEIPT_DT',        1);
-    ps_entitle = findCol(psHeader, 'HMS_MED_ENTLT_PRD', 5);
+    ps_inv   = findColMulti(psHeader, ['HMS_INVOICE_NBR', 'INVOICE_NBR', 'INVOICE_NO', 'INVOICE']);
+    ps_emp   = findColMulti(psHeader, ['EMPLID', 'EMPL_ID', 'EMPLOYEE_ID', 'PERS_NO']);
+    ps_reimb = findColMulti(psHeader, ['HMS_REIMBURSE_AMT', 'HMS_RECEIPT_AMT', 'REIMBURSE_AMT', 'AMOUNT']);
+    ps_med   = findColMulti(psHeader, ['HMS_MEDICAL_CD', 'MEDICAL_CD']);
+    ps_Memo  = findColMulti(psHeader, ['HMS_MEMO_LTR_NO', 'HMS_MED_GRANT_LTR', 'MEMO_LTR_NO']);
+    ps_cat   = findColMulti(psHeader, ['HMS_MBA_CLAIM_CAT', 'CLAIM_CAT']);
+    ps_date  = findColMulti(psHeader, ['RECEIPT_DT', 'ORG_RECEIPT_DT', 'DATE']);
+    ps_entitle = findColMulti(psHeader, ['HMS_MED_ENTLT_PRD', 'ENTLT_PRD']);
   }
 
-  for (let i = 1; i < rawPsRows.length; i++) {
+  // Safety fallbacks if any critical column was not matched
+  if (ps_inv < 0) ps_inv = findColMulti(psHeader, ['HMS_INVOICE_NBR', 'ECS_RMB_SAP_REF', 'ECS_RMB_TRANSID', 'HMS_FSA_TRANS_ID']);
+  if (ps_emp < 0) ps_emp = findColMulti(psHeader, ['EMPLID', 'EMPL_ID', 'EMPLOYEE_ID', 'PERS_NO']);
+  if (ps_reimb < 0) ps_reimb = findColMulti(psHeader, ['HMS_REIMBURSE_AMT', 'ECS_AMT_RMB', 'HMS_FLX_UNIT', 'HMS_RECEIPT_AMT', 'AMOUNT']);
+
+  for (let i = psHdrIdx + 1; i < rawPsRows.length; i++) {
     const row = rawPsRows[i];
-    if (!row || row.length <= ps_inv) continue;
+    if (!row || ps_inv < 0 || row.length <= ps_inv) continue;
     const inv = String(row[ps_inv] || '').trim();
     if (!inv) continue;
 
-    const reimb = parseNum(row[ps_reimb]);
+    const reimb = parseNum(ps_reimb >= 0 ? row[ps_reimb] : 0);
+    const emplid = ps_emp >= 0 ? String(row[ps_emp] || '').trim() : '';
+    const medCd = ps_med >= 0 ? String(row[ps_med] || '') : '';
+    const claimCat = ps_cat >= 0 ? String(row[ps_cat] || '') : '';
+    const memo = ps_Memo >= 0 ? String(row[ps_Memo] || '') : '';
+    const date = ps_date >= 0 ? String(row[ps_date] || '') : '';
+    const entitle = ps_entitle >= 0 ? String(row[ps_entitle] || '') : '';
 
     if (!psMap.has(inv)) {
       psMap.set(inv, {
-        inv, emplid: String(row[ps_emp] || '').trim(),
+        inv, emplid,
         totalReimb: 0, items: [],
-        medCd: String(row[ps_med] || ''), claimCat: String(row[ps_cat] || '')
+        medCd, claimCat
       });
     }
     const obj = psMap.get(inv);
     obj.totalReimb += reimb;
     obj.items.push({
       row, reimb,
-      Memo   : String(row[ps_Memo] || ''),
-      medCd  : String(row[ps_med]  || ''),
-      cat    : String(row[ps_cat]  || ''),
-      date   : String(row[ps_date] || ''),
-      entitle: String(row[ps_entitle] || '')
+      Memo   : memo,
+      medCd  : medCd,
+      cat    : claimCat,
+      date   : date,
+      entitle: entitle
     });
   }
 
   // --- Process SAP ---
   sapMap.clear();
-  let sapHdrIdx = 0;
-  if (rawSapRows[1] && String(rawSapRows[1]).includes('HMS_FBT_SEQNBR')) sapHdrIdx = 1;
+  const sapHdrIdx = (sapFileState && sapFileState.profile && sapFileState.profile.headerIndex !== undefined)
+    ? sapFileState.profile.headerIndex
+    : findHeaderRowIndex(rawSapRows);
   const sapHeader = rawSapRows[sapHdrIdx] || [];
 
-  const sap_ref  = currentDataType === 'FSA' ? findCol(sapHeader, 'HMS_ASSIGNMENT', 13) : findCol(sapHeader, 'REFERENCE', 7);
-  const sap_gl   = findCol(sapHeader, 'HMS_GL_AMOUNT', 21);
-  const sap_pers = findCol(sapHeader, 'HMS_PERS_NO',   14);
-  const sap_doc  = findCol(sapHeader, 'HMS_DOC_NBR',   2);
-  const sap_txt  = findColMulti(sapHeader, ['TEXT254','HMS_HEADER_TEXT'], 23);
-  const sap_tax  = findCol(sapHeader, 'TAX_CODE', 22);
+  const sap_ref  = currentDataType === 'FSA'
+    ? findColMulti(sapHeader, ['HMS_ASSIGNMENT', 'REFERENCE', 'REFERENCE_NUMBER'])
+    : findColMulti(sapHeader, ['REFERENCE', 'REFERENCE_NUMBER', 'HMS_ASSIGNMENT']);
+  const sap_gl   = findColMulti(sapHeader, ['HMS_GL_AMOUNT', 'GL_AMOUNT', 'HMS_SUPL_AMOUNT', 'AMOUNT']);
+  const sap_pers = findColMulti(sapHeader, ['HMS_PERS_NO', 'PERS_NO', 'PERNR', 'EMPLID']);
+  const sap_doc  = findColMulti(sapHeader, ['HMS_DOC_NBR', 'DOC_NBR', 'DOCUMENT_NUMBER', 'BELNR']);
+  const sap_txt  = findColMulti(sapHeader, ['TEXT254', 'HMS_HEADER_TEXT', 'SGTXT', 'TEXT']);
+  const sap_tax  = findColMulti(sapHeader, ['TAX_CODE', 'MWSKZ']);
 
   for (let i = sapHdrIdx + 1; i < rawSapRows.length; i++) {
     const row = rawSapRows[i];
-    if (!row || row.length <= sap_ref) continue;
+    if (!row || sap_ref < 0 || row.length <= sap_ref) continue;
     const ref = String(row[sap_ref] || '').trim();
     if (!ref) continue;
 
-    const glAmt = parseNum(row[sap_gl]);
+    const glAmt = parseNum(sap_gl >= 0 ? row[sap_gl] : 0);
+    const persNo = sap_pers >= 0 ? String(row[sap_pers] || '').trim() : '';
+    const docNbr = sap_doc >= 0 ? String(row[sap_doc] || '') : '';
+    const text = sap_txt >= 0 ? String(row[sap_txt] || '') : '';
+    const taxCode = sap_tax >= 0 ? String(row[sap_tax] || '') : '';
 
     if (!sapMap.has(ref)) {
       sapMap.set(ref, {
-        ref, persNo: String(row[sap_pers] || '').trim(),
-        docNbr: String(row[sap_doc] || ''),
+        ref, persNo,
+        docNbr,
         totalGL: 0, lines: []
       });
     }
@@ -442,9 +706,9 @@ function runComparison() {
     obj.lines.push({ 
       row, 
       glAmt, 
-      text: String(row[sap_txt] || ''), 
-      docNbr: String(row[sap_doc] || ''),
-      taxCode: String(row[sap_tax] || '')
+      text, 
+      docNbr,
+      taxCode
     });
   }
 
@@ -557,6 +821,9 @@ function runComparison() {
   
   // Switch tab after showing success for a brief moment
   setTimeout(() => {
+    const exportBtn = document.getElementById('btn-export-all');
+    if (exportBtn) exportBtn.disabled = false;
+
     switchTab('compare');
     // Reset button and status for next time
     btn.innerHTML = `
@@ -823,14 +1090,14 @@ function renderTable() {
 
   if (!filteredData.length) {
     tbody.innerHTML = `<tr><td colspan="18" class="text-center py-16 text-slate-400">No data matches the filter/search.</td></tr>`;
-    updatePagination(0);
+    updatePagination(0, 1, 0, 0);
     return;
   }
 
-  const totalPages = Math.ceil(filteredData.length / PAGE_SIZE);
+  const totalPages = Math.ceil(filteredData.length / pageSize) || 1;
   currentPage = Math.max(1, Math.min(currentPage, totalPages));
-  const start = (currentPage - 1) * PAGE_SIZE;
-  const end   = Math.min(start + PAGE_SIZE, filteredData.length);
+  const start = (currentPage - 1) * pageSize;
+  const end   = Math.min(start + pageSize, filteredData.length);
   const slice = filteredData.slice(start, end);
 
   tbody.innerHTML = slice.map((d, i) => {
@@ -959,28 +1226,128 @@ function renderTable() {
   updatePagination(filteredData.length, totalPages, start, end);
 }
 
-// Helper: get column value from a raw row by column name
 function getColVal(rawRows, row, colName, fallbackIdx) {
-  const hdr = rawRows[0] || [];
+  const sapHdrIdx = (sapFileState?.profile?.headerIndex !== undefined) ? sapFileState.profile.headerIndex : 0;
+  const hdr = rawRows[sapHdrIdx] || rawRows[0] || [];
   const idx = findCol(hdr, colName, fallbackIdx);
-  return String(row[idx] || '').trim() || '—';
+  return idx >= 0 ? (String(row[idx] || '').trim() || '—') : '—';
+}
+
+function changePageSize(val) {
+  pageSize = parseInt(val, 10) || 10;
+  currentPage = 1;
+  renderTable();
+}
+
+function goToPage(page) {
+  const totalPages = Math.ceil(filteredData.length / pageSize) || 1;
+  currentPage = Math.max(1, Math.min(page, totalPages));
+  renderTable();
+}
+
+function prevPage() {
+  if (currentPage > 1) {
+    currentPage--;
+    renderTable();
+  }
+}
+
+function nextPage() {
+  const totalPages = Math.ceil(filteredData.length / pageSize) || 1;
+  if (currentPage < totalPages) {
+    currentPage++;
+    renderTable();
+  }
 }
 
 function updatePagination(total, totalPages, start, end) {
-  setText('pg-start', total === 0 ? '0' : start + 1);
-  setText('pg-end',   end || 0);
-  setText('pg-total', total);
-  setText('pg-info',  `Page ${currentPage || 1}/${totalPages || 1}`);
-  const prevBtn = document.getElementById('btn-prev');
-  const nextBtn = document.getElementById('btn-next');
-  if (prevBtn) prevBtn.disabled = currentPage <= 1;
-  if (nextBtn) nextBtn.disabled = currentPage >= (totalPages || 1);
+  const infoEl = document.getElementById('pg-entries-info');
+  if (infoEl) {
+    if (total === 0) {
+      infoEl.textContent = '0 - 0 of 0 entries';
+    } else {
+      infoEl.textContent = `${start + 1} - ${end} of ${total.toLocaleString('id-ID')} entries`;
+    }
+  }
+
+  const ctrlEl = document.getElementById('pagination-controls');
+  if (!ctrlEl) return;
+
+  if (total === 0) {
+    ctrlEl.innerHTML = `
+      <button disabled class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-300 cursor-not-allowed">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+      <button class="w-8 h-8 flex items-center justify-center rounded-xl bg-blue-600 text-white font-bold text-xs shadow-sm">1</button>
+      <button disabled class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-300 cursor-not-allowed">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+      </button>
+    `;
+    return;
+  }
+
+  let html = '';
+
+  // Prev Button
+  const prevDisabled = currentPage <= 1;
+  html += `
+    <button onclick="prevPage()" ${prevDisabled ? 'disabled' : ''} title="Previous Page"
+      class="w-8 h-8 flex items-center justify-center rounded-xl ${prevDisabled ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition cursor-pointer'}">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+      </svg>
+    </button>
+  `;
+
+  // Page Numbers
+  const pages = getPageNumbers(currentPage, totalPages);
+  pages.forEach(p => {
+    if (p === '...') {
+      html += `<span class="w-8 h-8 flex items-center justify-center text-slate-400 text-xs select-none">...</span>`;
+    } else {
+      const isActive = p === currentPage;
+      if (isActive) {
+        html += `
+          <button class="w-8 h-8 flex items-center justify-center rounded-xl bg-blue-600 text-white font-bold text-xs shadow-sm" aria-current="page">
+            ${p}
+          </button>
+        `;
+      } else {
+        html += `
+          <button onclick="goToPage(${p})"
+            class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 text-xs font-medium transition cursor-pointer">
+            ${p}
+          </button>
+        `;
+      }
+    }
+  });
+
+  // Next Button
+  const nextDisabled = currentPage >= totalPages;
+  html += `
+    <button onclick="nextPage()" ${nextDisabled ? 'disabled' : ''} title="Next Page"
+      class="w-8 h-8 flex items-center justify-center rounded-xl ${nextDisabled ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition cursor-pointer'}">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+      </svg>
+    </button>
+  `;
+
+  ctrlEl.innerHTML = html;
 }
 
-function prevPage() { if (currentPage > 1) { currentPage--; renderTable(); } }
-function nextPage() {
-  const totalPages = Math.ceil(filteredData.length / PAGE_SIZE);
-  if (currentPage < totalPages) { currentPage++; renderTable(); }
+function getPageNumbers(current, total) {
+  if (total <= 10) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, '...', total];
+  }
+  if (current >= total - 3) {
+    return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+  }
+  return [1, '...', current - 1, current, current + 1, '...', total];
 }
 
 // ============================================================
@@ -1120,15 +1487,22 @@ function downloadReport(source) {
 
   if (source === 'ps') {
     // Base PS: one row per original PS row, with recon columns appended
+    const psHdrIdx = (psFileState?.profile?.headerIndex !== undefined) ? psFileState.profile.headerIndex : findHeaderRowIndex(rawPsRows);
+    const psHeader = rawPsRows[psHdrIdx] || [];
+    let ps_inv = currentDataType === 'FSA'
+      ? findColMulti(psHeader, ['HMS_FSA_TRANS_ID', 'FSA_TRANS_ID'])
+      : (currentDataType === 'CB'
+          ? findColMulti(psHeader, ['ECS_RMB_SAP_REF', 'ECS_RMB_TRANSID'])
+          : findColMulti(psHeader, ['HMS_INVOICE_NBR', 'INVOICE_NBR']));
+    if (ps_inv < 0) ps_inv = findColMulti(psHeader, ['HMS_INVOICE_NBR', 'ECS_RMB_SAP_REF', 'ECS_RMB_TRANSID', 'HMS_FSA_TRANS_ID']);
+
     sheetData.push([
-      ...rawPsRows[0],
+      ...psHeader,
       'REKON_STATUS', 'TOTAL_SAP_GL', 'DIFFERENCE_SAP_vs_PS', 'REMARKS'
     ]);
-    for (let i = 1; i < rawPsRows.length; i++) {
+    for (let i = psHdrIdx + 1; i < rawPsRows.length; i++) {
       const row = rawPsRows[i];
-      const psHeader = rawPsRows[0];
-      const ps_inv = findCol(psHeader, 'HMS_INVOICE_NBR', 14);
-      const inv = String(row[ps_inv] || '').trim();
+      const inv = (ps_inv >= 0 && row) ? String(row[ps_inv] || '').trim() : '';
       const d   = reconData.find(r => r.invoice === inv);
 
       let status = '—', sapTotal = '—', selisih = '—', ket = '—';
@@ -1142,16 +1516,20 @@ function downloadReport(source) {
     }
   } else {
     // Base SAP: one row per original SAP line (G/L row), with recon columns appended
-    const sapHdrIdx = rawSapRows[1] && String(rawSapRows[1]).includes('HMS_FBT_SEQNBR') ? 1 : 0;
+    const sapHdrIdx = (sapFileState?.profile?.headerIndex !== undefined) ? sapFileState.profile.headerIndex : findHeaderRowIndex(rawSapRows);
+    const sapHeader = rawSapRows[sapHdrIdx] || [];
+    let sap_ref = currentDataType === 'FSA'
+      ? findColMulti(sapHeader, ['HMS_ASSIGNMENT', 'REFERENCE'])
+      : findColMulti(sapHeader, ['REFERENCE', 'HMS_ASSIGNMENT']);
+    if (sap_ref < 0) sap_ref = findColMulti(sapHeader, ['REFERENCE', 'HMS_ASSIGNMENT', 'REFERENCE_NUMBER']);
+
     sheetData.push([
-      ...rawSapRows[sapHdrIdx],
+      ...sapHeader,
       'REKON_STATUS', 'TOTAL_PS_REIMB', 'DIFFERENCE_SAP_vs_PS', 'REMARKS'
     ]);
     for (let i = sapHdrIdx + 1; i < rawSapRows.length; i++) {
       const row = rawSapRows[i];
-      const sapHeader = rawSapRows[sapHdrIdx];
-      const sap_ref = findCol(sapHeader, 'REFERENCE', 7);
-      const ref = String(row[sap_ref] || '').trim();
+      const ref = (sap_ref >= 0 && row) ? String(row[sap_ref] || '').trim() : '';
       const d   = reconData.find(r => r.invoice === ref);
 
       let status = '—', psTotal = '—', selisih = '—', ket = '—';
@@ -1285,15 +1663,17 @@ function loadDemoData() {
 // ============================================================
 // UTILITY FUNCTIONS
 // ============================================================
-function findCol(headers, name, fallback) {
-  const nameUpper = name.toUpperCase();
-  const idx = headers.findIndex(h => typeof h === 'string' && h.trim().toUpperCase() === nameUpper);
+function findCol(headers, name, fallback = -1) {
+  if (!Array.isArray(headers)) return fallback;
+  const target = normalizeHeaderName(name);
+  const idx = headers.findIndex(h => normalizeHeaderName(h) === target);
   return idx >= 0 ? idx : fallback;
 }
-function findColMulti(headers, names, fallback) {
-  const namesUpper = names.map(n => n.toUpperCase());
-  for (const nameUpper of namesUpper) {
-    const idx = headers.findIndex(h => typeof h === 'string' && h.trim().toUpperCase() === nameUpper);
+function findColMulti(headers, names, fallback = -1) {
+  if (!Array.isArray(headers)) return fallback;
+  const targets = names.map(normalizeHeaderName);
+  for (const target of targets) {
+    const idx = headers.findIndex(h => normalizeHeaderName(h) === target);
     if (idx >= 0) return idx;
   }
   return fallback;
@@ -1317,22 +1697,22 @@ function medLabel(code) {
 }
 function resetAll() {
   rawPsRows = []; rawSapRows = []; reconData = []; filteredData = [];
+  psFileState = null; sapFileState = null;
   psMap.clear(); sapMap.clear();
-  document.getElementById('ps-fname').textContent = 'Click or Drag PeopleSoft File';
-  document.getElementById('ps-fdesc').innerHTML = 'Format: <span class="font-bold text-blue-700">HDC_FBT_PS_[TYPE]_[PERIOD].xlsx</span>';
-  document.getElementById('sap-fname').textContent = 'Click or Drag SAP File';
-  document.getElementById('sap-fdesc').innerHTML = 'Format: <span class="font-bold text-blue-700">HDC_FBT_SAP_[TYPE]_[PERIOD].xlsx</span>';
-  document.getElementById('ps-badge').innerHTML = '<span>Waiting for PeopleSoft file...</span>';
-  document.getElementById('sap-badge').innerHTML = '<span>Waiting for SAP file...</span>';
+  currentPage = 1;
+  pageSize = 10;
+  const selPageSize = document.getElementById('select-page-size');
+  if (selPageSize) selPageSize.value = '10';
+
+  const exportBtn = document.getElementById('btn-export-all');
+  if (exportBtn) exportBtn.disabled = true;
+
   document.getElementById('fi-ps').value = '';
   document.getElementById('fi-sap').value = '';
-  // Reset validation
-  ['ps','sap'].forEach(t => {
-    const dz = document.getElementById('dz-' + t);
-    const msg = document.getElementById(t + '-validation-msg');
-    if (dz) dz.classList.remove('dz-valid','dz-invalid');
-    if (msg) { msg.textContent = ''; msg.classList.add('hidden'); }
-  });
+
+  resetDropzoneUI('ps');
+  resetDropzoneUI('sap');
+
   checkReady();
   switchTab('upload');
   showToast('🔄 Reset. Ready to process new files.');

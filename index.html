@@ -292,8 +292,8 @@
     thead .tbl-freeze-no,
     thead .tbl-freeze-inv,
     thead .tbl-freeze-emp {
-      z-index: 5;
-      background: rgba(248, 250, 252, 0.97);
+      z-index: 30;
+      background: rgba(248, 250, 252, 0.98);
     }
 
     /* Right shadow on last frozen col */
@@ -460,6 +460,27 @@
       color: #059669;
     }
 
+    /* Disabled state */
+    .stepper-item.disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .stepper-item.disabled .step-circle {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+      color: #cbd5e1;
+      box-shadow: none;
+    }
+
+    .stepper-item.disabled .step-title {
+      color: #94a3b8;
+    }
+
+    .stepper-item.disabled .step-sub {
+      color: #cbd5e1;
+    }
+
     /* ---- COLLAPSIBLE HOW-TO ---- */
     .howto-panel {
       max-height: 0;
@@ -490,6 +511,11 @@
     .dz-valid {
       border-color: #22c55e !important;
       background-color: #f0fdf4 !important;
+    }
+
+    .dz-warn {
+      border-color: #f59e0b !important;
+      background-color: #fffbeb !important;
     }
 
     /* ---- COLUMN VISIBILITY ---- */
@@ -593,11 +619,9 @@
       <div class="stepper-wrap">
 
         <!-- Step 1: Upload Files -->
-        <div class="stepper-item completed" id="stepper-1" onclick="switchTab('upload')">
+        <div class="stepper-item active" id="stepper-1" onclick="handleStepperClick('upload', 1)">
           <div class="step-circle" id="step-circle-1">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-            </svg>
+            <span id="step-num-1">1</span>
           </div>
           <div class="step-label">
             <div class="step-title">Upload Files</div>
@@ -606,7 +630,7 @@
         </div>
 
         <!-- Step 2: Processing -->
-        <div class="stepper-item" id="stepper-2" onclick="switchTab('compare')">
+        <div class="stepper-item disabled" id="stepper-2" onclick="handleStepperClick('compare', 2)">
           <div class="step-circle" id="step-circle-2">
             <span id="step-num-2">2</span>
           </div>
@@ -617,7 +641,7 @@
         </div>
 
         <!-- Step 3: Preview Results -->
-        <div class="stepper-item" id="stepper-3" onclick="switchTab('compare')">
+        <div class="stepper-item disabled" id="stepper-3" onclick="handleStepperClick('compare', 3)">
           <div class="step-circle" id="step-circle-3">
             <span id="step-num-3">3</span>
           </div>
@@ -628,7 +652,7 @@
         </div>
 
         <!-- Step 4: Download -->
-        <div class="stepper-item" id="stepper-4" onclick="switchTab('summary')">
+        <div class="stepper-item disabled" id="stepper-4" onclick="handleStepperClick('summary', 4)">
           <div class="step-circle" id="step-circle-4">
             <span id="step-num-4">4</span>
           </div>
@@ -1148,7 +1172,7 @@
         </div>
 
         <!-- Table -->
-        <div id="compare-table-wrap" class="overflow-x-auto">
+        <div id="compare-table-wrap" class="overflow-x-auto overflow-y-auto max-h-[480px] relative border-b border-slate-200">
           <table id="compare-table" class="text-xs text-left w-full"
             style="border-collapse:separate; border-spacing:0;">
             <thead class="table-th">
@@ -1212,22 +1236,41 @@
           </table>
         </div>
 
-
-        <!-- Pagination -->
+        <!-- Pagination (3-Zone Enterprise Data Table) -->
         <div
-          class="px-5 py-3.5 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-center gap-2">
-          <p class="text-[11px] text-slate-500 font-sans">
-            Showing <span id="pg-start" class="font-bold">0</span>–<span id="pg-end" class="font-bold">0</span>
-            of <span id="pg-total" class="font-bold">0</span> invoices
-          </p>
-          <div class="flex items-center gap-2">
-            <button onclick="prevPage()" id="btn-prev"
-              class="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition">←
-              Prev</button>
-            <span id="pg-info" class="text-xs font-semibold text-slate-600 px-2">Page 1/1</span>
-            <button onclick="nextPage()" id="btn-next"
-              class="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition">Next
-              →</button>
+          class="px-5 py-3 border-t border-slate-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-3">
+          <!-- Zone 1: Show Entries -->
+          <div class="flex items-center gap-2 text-xs text-slate-600">
+            <span>Show</span>
+            <div class="relative inline-flex items-center">
+              <select id="select-page-size" onchange="changePageSize(this.value)"
+                class="appearance-none bg-white border border-slate-300 hover:border-slate-400 text-slate-700 text-xs font-semibold rounded-full pl-3 pr-7 py-1 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                <option value="10" selected>10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <svg class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+            <span>entries</span>
+          </div>
+
+          <!-- Zone 2: Navigation Pill -->
+          <div id="pagination-controls" class="bg-slate-100/90 p-1 rounded-2xl flex items-center gap-0.5 shadow-inner">
+            <button disabled class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-300 cursor-not-allowed">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            </button>
+            <button class="w-8 h-8 flex items-center justify-center rounded-xl bg-blue-600 text-white font-bold text-xs shadow-sm">1</button>
+            <button disabled class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-300 cursor-not-allowed">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+
+          <!-- Zone 3: Info text -->
+          <div class="text-xs text-slate-600 font-medium whitespace-nowrap" id="pg-entries-info">
+            0 - 0 of 0 entries
           </div>
         </div>
       </div>
