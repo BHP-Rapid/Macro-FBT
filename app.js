@@ -204,23 +204,15 @@ function downloadSampleTemplate(type) {
 function parseFileName(fileName) {
   if (!fileName) return { valid: false, reason: 'Nama file tidak boleh kosong.' };
 
-  // Ketentuan format nama file:
-  // File PeopleSoft : HDC_FBT_PS_[TYPE]_[PERIOD].xlsx
-  // File SAP        : HDC_FBT_SAP_[TYPE]_[PERIOD].xlsx
-  // Contoh: HDC_FBT_SAP_MBA_10Agt_9Sept26.xlsx, HDC_FBT_PS_C&B_May.xlsx
-  const match = fileName.trim().match(/^HDC_FBT_(PS|SAP)_([A-Za-z0-9&]+)_(.+?)(?:\s*\(\d+\)|\s*-\s*copy)?\.([a-zA-Z0-9]+)$/i);
+  const match = fileName.trim().match(/\.([a-zA-Z0-9]+)$/i);
   if (!match) {
     return {
       valid: false,
-      reason: 'Format nama file tidak sesuai ketentuan.'
+      reason: 'File tidak memiliki ekstensi.'
     };
   }
 
-  const rawSystem = match[1].toUpperCase(); // Pasti 'PS' atau 'SAP'
-  const rawType = match[2].toUpperCase();
-  const rawPeriod = match[3].trim();
-  const ext = match[4].toLowerCase();
-
+  const ext = match[1].toLowerCase();
   if (!['xlsx', 'xls', 'csv'].includes(ext)) {
     return {
       valid: false,
@@ -228,21 +220,8 @@ function parseFileName(fileName) {
     };
   }
 
-  const system = rawSystem === 'PS' ? 'ps' : 'sap';
-
-  // Normalisasi jenis modul
-  let normType = rawType;
-  if (normType === 'C&B' || normType === 'CB' || normType === 'CNB') normType = 'CB';
-  else if (normType === 'MBA') normType = 'MBA';
-  else if (normType === 'FSA') normType = 'FSA';
-
   return {
     valid: true,
-    system,
-    rawSystem,
-    rawType,
-    normType,
-    period: rawPeriod,
     ext
   };
 }
@@ -362,9 +341,8 @@ function detectFileProfile(rows) {
   };
 }
 
-// Validasi Ganda: Nama File + Struktur Header
 function validateUploadedFile(file, cleanRows, type) {
-  // 1. Validasi Pola Nama File
+  // 1. Validasi Ekstensi File
   const nameRes = parseFileName(file.name);
   if (!nameRes.valid) {
     return {
@@ -372,9 +350,9 @@ function validateUploadedFile(file, cleanRows, type) {
       status: 'rejected_name',
       nameParsed: null,
       profile: null,
-      title: 'Nama File Ditolak',
+      title: 'Ekstensi Ditolak',
       reason: nameRes.reason,
-      help: `Format wajib: <strong>HDC_FBT_${type.toUpperCase()}_[TYPE]_[PERIOD].xlsx</strong><br>Contoh: <span class="font-mono text-slate-800">HDC_FBT_${type.toUpperCase()}_MBA_10Agt_9Sept26.xlsx</span>`
+      help: `Harap gunakan file .xlsx, .xls, atau .csv.`
     };
   }
 
@@ -392,53 +370,27 @@ function validateUploadedFile(file, cleanRows, type) {
     };
   }
 
-  // 3. Cek apakah file tertukar / salah kotak (Nama & isi sama-sama terdeteksi sistem seberang)
-  if (nameRes.system !== type && profile.system !== type) {
+  // 3. Cek apakah file tertukar / salah kotak
+  if (profile.system !== type) {
     return {
       ok: false,
       status: 'warn_swap',
       nameParsed: nameRes,
       profile: profile,
       title: `⚠️ File ${profile.label} Salah Kotak`,
-      reason: `File ini adalah untuk <strong>${profile.label}</strong>, bukan ${type === 'ps' ? 'PeopleSoft' : 'SAP Finance'}.`,
+      reason: `File ini terdeteksi sebagai <strong>${profile.label}</strong>, bukan ${type === 'ps' ? 'PeopleSoft' : 'SAP Finance'}.`,
       help: 'Klik tombol "Tukar Posisi File" di bawah untuk menukar ke kotak yang benar.'
     };
   }
 
-  // 4. Cek Integritas: Sistem pada Nama File vs Sistem pada Isi Header
-  if (nameRes.system !== profile.system) {
-    return {
-      ok: false,
-      status: 'rejected_conflict',
-      nameParsed: nameRes,
-      profile: profile,
-      title: '❌ Integritas File Gagal',
-      reason: `Nama file menyatakan <strong>${nameRes.rawSystem}</strong>, namun kolom data di dalamnya adalah <strong>${profile.label}</strong>!`,
-      help: 'File ini tampaknya telah salah diberi nama atau isinya tertukar. Harap periksa kembali sumber file Anda.'
-    };
-  }
-
-  // 5. Cek Integritas: Modul pada Nama File vs Modul pada Isi Header
-  if (profile.module !== 'UNKNOWN' && nameRes.normType !== profile.module) {
-    return {
-      ok: false,
-      status: 'rejected_module_conflict',
-      nameParsed: nameRes,
-      profile: profile,
-      title: '❌ Modul Tidak Cocok',
-      reason: `Nama file menyatakan tipe <strong>${nameRes.rawType}</strong>, namun kolom transaksi di dalamnya adalah tipe <strong>${profile.module}</strong>!`,
-      help: `File ${profile.label} ini menggunakan kolom kunci '${profile.keyCol}'. Harap sesuaikan nama file atau unggah file ${nameRes.rawType} yang benar.`
-    };
-  }
-
-  // 6. Terverifikasi Sempurna!
+  // 4. Terverifikasi Sempurna!
   return {
     ok: true,
     status: 'valid',
     nameParsed: nameRes,
     profile: profile,
-    title: `${profile.label} (${nameRes.rawType})`,
-    reason: `Nama file dan struktur kolom terverifikasi valid untuk kotak ${type === 'ps' ? 'PeopleSoft' : 'SAP Finance'}.`,
+    title: `${profile.label} (${profile.module})`,
+    reason: `Struktur kolom terverifikasi valid untuk kotak ${type === 'ps' ? 'PeopleSoft' : 'SAP Finance'}.`,
     help: ''
   };
 }
@@ -506,7 +458,7 @@ function resetDropzoneUI(type) {
     dz.classList.add('border-blue-300', 'bg-blue-50/40');
   }
   if (fname) fname.textContent = type === 'ps' ? 'Click or Drag PeopleSoft File' : 'Click or Drag SAP File';
-  if (fdesc) fdesc.innerHTML = `Format: <span class="font-bold text-blue-700">HDC_FBT_${type.toUpperCase()}_[TYPE]_[PERIOD].xlsx</span>`;
+  if (fdesc) fdesc.innerHTML = `Format: <span class="font-bold text-blue-700">.xlsx / .xls / .csv</span>`;
   if (badge) badge.innerHTML = `<span>Waiting for ${type === 'ps' ? 'PeopleSoft' : 'SAP'} file...</span>`;
   if (msg) { msg.textContent = ''; msg.classList.add('hidden'); }
 }
@@ -656,39 +608,27 @@ function checkReady() {
 
   if (psOk && sapOk) {
     // Cross-check type between both files
-    const psType = psFileState.validation.nameParsed.normType;
-    const sapType = sapFileState.validation.nameParsed.normType;
+    const psType = psFileState.profile.module;
+    const sapType = sapFileState.profile.module;
 
-    if (psType !== sapType) {
+    if (psType !== 'UNKNOWN' && sapType !== 'UNKNOWN' && psType !== sapType) {
       btn.disabled = true;
       dot.className = 'w-2 h-2 rounded-full bg-rose-500';
-      txt.innerHTML = `❌ <strong>Tipe Modul Tidak Cocok!</strong> File PeopleSoft adalah <strong>${psFileState.validation.nameParsed.rawType}</strong> sedangkan file SAP adalah <strong>${sapFileState.validation.nameParsed.rawType}</strong>. Rekonsiliasi harus dilakukan pada modul yang sama.`;
+      txt.innerHTML = `❌ <strong>Tipe Modul Tidak Cocok!</strong> File PeopleSoft adalah <strong>${psType}</strong> sedangkan file SAP adalah <strong>${sapType}</strong>. Rekonsiliasi harus dilakukan pada modul yang sama.`;
       txt.className = 'text-rose-700 font-semibold text-xs';
       return;
     }
 
     // Auto-sync form input labels
     const elJenis = document.getElementById('inp-jenis');
-    const elPeriode = document.getElementById('inp-periode');
-    if (elJenis && psFileState.validation.nameParsed.rawType) {
-      elJenis.value = psFileState.validation.nameParsed.rawType;
-    }
-    if (elPeriode && psFileState.validation.nameParsed.period) {
-      elPeriode.value = psFileState.validation.nameParsed.period;
+    if (elJenis && psType !== 'UNKNOWN') {
+      elJenis.value = psType;
     }
 
     btn.disabled = false;
     dot.className = 'w-2 h-2 rounded-full bg-emerald-500 pulse-dot';
-
-    const psPer = psFileState.validation.nameParsed.period;
-    const sapPer = sapFileState.validation.nameParsed.period;
-    if (psPer.toLowerCase() !== sapPer.toLowerCase()) {
-      txt.innerHTML = `⚠️ <strong>Peringatan Periode:</strong> Periode berbeda: PeopleSoft (<strong>${psPer}</strong>) vs SAP (<strong>${sapPer}</strong>). Klik "Compare & Reconcile" jika ini disengaja.`;
-      txt.className = 'text-amber-800 font-semibold text-xs';
-    } else {
-      txt.innerHTML = `✅ Kedua file valid & cocok (<strong>${psFileState.validation.nameParsed.rawType} · ${psPer}</strong>)! Klik "Compare & Reconcile" untuk memulai.`;
-      txt.className = 'text-emerald-700 font-semibold text-xs';
-    }
+    txt.innerHTML = `✅ Kedua file valid & siap diproses (<strong>${psType}</strong>)! Klik "Start Reconciliation" untuk memulai.`;
+    txt.className = 'text-emerald-700 font-semibold text-xs';
   } else {
     btn.disabled = true;
     const psHasFile = !!psFileState;
@@ -712,7 +652,7 @@ function checkReady() {
         txt.className = 'text-rose-700 text-xs';
       } else {
         dot.className = 'w-2 h-2 rounded-full bg-amber-500';
-        txt.textContent = `File PeopleSoft (${psFileState.validation.nameParsed.rawType}) siap. Menunggu file SAP Finance...`;
+        txt.textContent = `File PeopleSoft (${psFileState.profile.module}) siap. Menunggu file SAP Finance...`;
         txt.className = 'text-amber-700 text-xs';
       }
     } else if (sapHasFile) {
@@ -722,12 +662,12 @@ function checkReady() {
         txt.className = 'text-rose-700 text-xs';
       } else {
         dot.className = 'w-2 h-2 rounded-full bg-amber-500';
-        txt.textContent = `File SAP Finance (${sapFileState.validation.nameParsed.rawType}) siap. Menunggu file PeopleSoft...`;
+        txt.textContent = `File SAP Finance (${sapFileState.profile.module}) siap. Menunggu file PeopleSoft...`;
         txt.className = 'text-amber-700 text-xs';
       }
     } else {
       dot.className = 'w-2 h-2 rounded-full bg-slate-300';
-      txt.textContent = 'Silakan upload kedua file sesuai format untuk memulai rekonsiliasi.';
+      txt.textContent = 'Silakan upload kedua file untuk memulai rekonsiliasi.';
       txt.className = 'text-slate-500 text-xs';
     }
   }
@@ -1096,7 +1036,7 @@ function updateKPIs() {
 function updateSummaryPage() {
   const elJenis = document.getElementById('inp-jenis');
   const elPeriode = document.getElementById('inp-periode');
-  const jenis = (elJenis ? elJenis.value : null) || 'MBA';
+  const jenis = currentDataType || 'MBA';
   const periode = (elPeriode ? elPeriode.value : null) || '10Agt_9Sept26';
 
   const total = reconData.length;
