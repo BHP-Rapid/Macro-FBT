@@ -1144,7 +1144,13 @@ function updateSummaryPage() {
   setText('fin-mm-diff', (mmSAP - mmPS >= 0 ? '+' : '') + 'IDR ' + Math.round(mmSAP - mmPS).toLocaleString('id-ID'));
   setText('fin-total-ps', 'IDR ' + Math.round(grandPS).toLocaleString('id-ID'));
   setText('fin-total-sap', 'IDR ' + Math.round(grandSAP).toLocaleString('id-ID'));
-  setText('fin-total-diff', (grandSAP - grandPS >= 0 ? '+' : '') + 'IDR ' + Math.round(grandSAP - grandPS).toLocaleString('id-ID'));
+  const grandDiff = grandSAP - grandPS;
+  const diffStr = (grandDiff >= 0 ? '+' : '') + 'IDR ' + Math.round(grandDiff).toLocaleString('id-ID');
+  setText('fin-total-diff', diffStr);
+
+  // Set the Net Difference KPI Card in Download Tab
+  const diffPrefix = grandDiff >= 0 ? '+' : '-';
+  setText('sum-netdiff', `${diffPrefix}Rp ${Math.round(Math.abs(grandDiff)).toLocaleString('id-ID').replace(/,/g, '.')},00`);
 
   // File card labels
   ['ps', 'sap'].forEach(t => {
