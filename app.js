@@ -143,40 +143,40 @@ function downloadSampleTemplate(type) {
   }
 
   const wb = XLSX.utils.book_new();
-  let headers, rows, sheetName, fileName;
+  let headers, sheetName, fileName;
 
   if (type === 'sap') {
     headers = ['HMS_FBT_SEQNBR', 'HMS_COMPANY_CD', 'HMS_DOC_NBR', 'CURRENCY_CD', 'DOC_TYPE',
       'CREATED_BY_USER', 'HMS_HEADER_TEXT', 'REFERENCE', 'DOCUMENT_DT', 'POSTING_DT',
       'HMS_SUPPL_ACT', 'HMS_SUP_POST_KEY', 'HMS_SUPL_AMOUNT', 'HMS_ASSIGNMENT',
       'HMS_PERS_NO', 'HMS_PAYMENT_BLOCK', 'HMS_CLEAR_DT', 'HMS_CLEAR_DOC',
-      'HMSA_ACCT_NO', 'HMS_GL_POST_KEY', 'HMS_COST_CENTER', 'HMS_GL_AMOUNT', 'TAX_CODE', 'TEXT254'];
-    rows = [
-      ['1001', '1616', '2500001', 'IDR', 'XU', 'ID-BATCH', 'PMB-434680', '230901MB671076', '01-SEP-2026', '02-SEP-2026', 'ID00434680', '31', '7735273', '00000000', '80434680', '', '', '', '80320100', '40', '1616315000', '7735273', 'V0', 'Ranap Mitra Keluarga'],
-      ['1002', '1616', '2500002', 'IDR', 'XU', 'ID-BATCH', 'PMB-415263', '230901MB671079', '01-SEP-2026', '02-SEP-2026', 'ID00415263', '31', '798600', '00000000', '80415263', '', '', '', '80320100', '40', '1616315000', '798600', 'V0', 'Outpatient'],
-      ['1003', '1616', '2500003', 'IDR', 'XU', 'ID-BATCH', 'PMB-431379', '230901MB671085', '01-SEP-2026', '02-SEP-2026', 'ID00431379', '31', '440117', '00000000', '80431379', '', '', '', '80320100', '40', '1616315000', '440117', 'V0', 'Outpatient'],
-      ['1004', '1616', '2500004', 'IDR', 'XU', 'ID-BATCH', 'PMB-008599', '230901MB671099', '01-SEP-2026', '02-SEP-2026', 'ID00008599', '31', '44325813', '00000000', '80008599', '', '', '', '80320100', '40', '1616315000', '44325813', 'V0', 'Ranap RS Wava Husada'],
-      ['1005', '1616', '2500005', 'IDR', 'XU', 'ID-BATCH', 'PMB-012422', '230901MB671136', '01-SEP-2026', '02-SEP-2026', 'ID00012422', '31', '200000', '00000000', '80012422', '', '', '', '80320100', '40', '1616315000', '200000', 'V0', 'Glasses'],
-    ];
+      'HMSA_ACCT_NO', 'HMS_GL_POST_KEY', 'HMS_COST_CENTER', 'HMS_GL_AMOUNT', 'TAX_CODE', 'TEXT254',
+      'HMS_TAXABLE', 'HMS_FBT_TYPE', 'PRCSINSTANCE', 'CREATEDBY', 'CREATEDDTTM', 'LASTUPDBY', 'LASTUPDDTTM'];
     sheetName = 'SAP_Template';
-    fileName = 'HDC_FBT_SAP_MBA_10Agt_9Sept26_TEMPLATE.xlsx';
-  } else {
+    fileName = 'HDC_FBT_SAP_TEMPLATE.xlsx';
+  } else if (type === 'ps_mba') {
     headers = ['EMPLID', 'RECEIPT_DT', 'SEQNO', 'HMS_MEDICAL_CD', 'ORG_RECEIPT_DT', 'HMS_MED_ENTLT_PRD',
       'HMS_MBA_CLAIM_CAT', 'DEPENDENT_BENEF', 'ACCTG_ENTRY_FLG', 'HMS_MED_GRANT_LTR',
       'HMS_Memo_LTR_NO', 'HMS_RECEIPT_AMT', 'HMS_Reimburse_AMT', 'HMS_FORWARD_STATUS',
       'HMS_INVOICE_NBR', 'HMS_ACC_DATE'];
-    rows = [
-      ['80434680', '2026-08-31', '0', '0002', '2026-08-15', '2026', 'D', '04', 'Y', '', 'RANAP MITRA KELUARGA', '7735273', '7735273', 'ACTG', '230901MB671076', '2026-09-01'],
-      ['80415263', '2026-08-31', '0', '0001', '2026-08-21', '2026', 'D', '04', 'Y', '', '', '798600', '798600', 'ACTG', '230901MB671079', '2026-09-01'],
-      ['80431379', '2026-08-31', '0', '0001', '2026-08-29', '2026', 'D', '02', 'Y', '', '', '440117', '440117', 'ACTG', '230901MB671085', '2026-09-01'],
-      ['80008599', '2026-08-31', '1', '0002', '2026-08-23', '2026', 'E', '', 'Y', '', 'RANAP RS WAVA HUSADA', '44325813', '44325813', 'ACTG', '230901MB671099', '2026-09-01'],
-      ['80012422', '2026-08-31', '0', '0004', '2026-08-30', '2026', 'D', '02', 'Y', '', '', '200000', '200000', 'ACTG', '230901MB671136', '2026-09-01'],
-    ];
-    sheetName = 'PeopleSoft_Template';
-    fileName = 'HDC_FBT_PS_MBA_10Agt_9Sept26_TEMPLATE.xlsx';
+    sheetName = 'PeopleSoft_MBA';
+    fileName = 'HDC_FBT_PS_MBA_TEMPLATE.xlsx';
+  } else if (type === 'ps_fsa') {
+    headers = ['HMS_FSA_TRANS_ID', 'EMPLID', 'HMS_FLX_YEAR', 'HMS_FSA_STAT', 'DESCRLONG',
+      'SEQNBR', 'RECEIPT_DT', 'HMS_FSA_ITEM', 'HMS_FLX_UNIT', 'LASTUPDDTTM'];
+    sheetName = 'PeopleSoft_FSA';
+    fileName = 'HDC_FBT_PS_FSA_TEMPLATE.xlsx';
+  } else if (type === 'ps_cb') {
+    headers = ['ECS_RMB_TRANSID', 'EMPLID', 'ECS_GROUP_ID', 'EXPENSE_TYPE', 'PURPOSE', 'ECS_RMB_STAT',
+      'ECS_RMB_SAP_REF', 'ECS_RMB_P1_DTTM', 'SEQNBR', 'RECEIPT_DT', 'ECS_RMB_EXP_ID',
+      'EXPENSE_ITEM', 'ECS_AMT_RMB', 'COMMENTS'];
+    sheetName = 'PeopleSoft_CB';
+    fileName = 'HDC_FBT_PS_CB_TEMPLATE.xlsx';
+  } else {
+    return; // Fallback
   }
 
-  const data = [headers, ...rows];
+  const data = [headers]; // Only headers, no data rows
   const ws = XLSX.utils.aoa_to_sheet(data);
 
   // Style header row (bold + navy background)
@@ -808,6 +808,7 @@ function runComparison() {
     if (ps_emp < 0) ps_emp = findColMulti(psHeader, ['EMPLID', 'EMPL_ID', 'EMPLOYEE_ID', 'PERS_NO']);
     if (ps_reimb < 0) ps_reimb = findColMulti(psHeader, ['HMS_REIMBURSE_AMT', 'ECS_AMT_RMB', 'HMS_FLX_UNIT', 'HMS_RECEIPT_AMT', 'AMOUNT']);
 
+    let minTime = Infinity, maxTime = -Infinity;
     for (let i = psHdrIdx + 1; i < rawPsRows.length; i++) {
       const row = rawPsRows[i];
       if (!row || ps_inv < 0 || row.length <= ps_inv) continue;
@@ -821,6 +822,14 @@ function runComparison() {
       const memo = ps_Memo >= 0 ? String(row[ps_Memo] || '') : '';
       const date = ps_date >= 0 ? String(row[ps_date] || '') : '';
       const entitle = ps_entitle >= 0 ? String(row[ps_entitle] || '') : '';
+
+      if (date) {
+        const t = new Date(date).getTime();
+        if (!isNaN(t) && t > 0) {
+          if (t < minTime) minTime = t;
+          if (t > maxTime) maxTime = t;
+        }
+      }
 
       if (!psMap.has(inv)) {
         psMap.set(inv, {
@@ -931,6 +940,28 @@ function runComparison() {
         dataType: currentDataType
       });
     });
+
+    // Set Date Range & Type labels
+    let periodStr = "Periode";
+    if (minTime !== Infinity && maxTime !== -Infinity) {
+      const minD = new Date(minTime), maxD = new Date(maxTime);
+      const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const p1 = `${minD.getDate()}${m[minD.getMonth()]}`;
+      const p2 = `${maxD.getDate()}${m[maxD.getMonth()]}${String(maxD.getFullYear()).slice(-2)}`;
+      periodStr = (p1 === p2.slice(0, p1.length)) ? p2 : `${p1}_${p2}`;
+    }
+    const elPeriode = document.getElementById('inp-periode');
+    if (elPeriode) {
+      elPeriode.value = periodStr;
+      const ev = new Event('input');
+      elPeriode.dispatchEvent(ev);
+    }
+    const sumType = document.getElementById('sum-Type');
+    if (sumType) sumType.textContent = currentDataType;
+    const dlTypePs = document.getElementById('dl-Type-ps');
+    if (dlTypePs) dlTypePs.textContent = currentDataType;
+    const dlTypeSap = document.getElementById('dl-Type-sap');
+    if (dlTypeSap) dlTypeSap.textContent = currentDataType;
 
     // Update Table Headers dynamically based on currentDataType
     const hdrClaimCat = document.querySelector('th.col-ps-claimcat');
@@ -1648,10 +1679,9 @@ function closeModal() { document.getElementById('modal').classList.add('hidden')
 function downloadReport(source) {
   if (!reconData.length) { showToast('⚠️ No data to download.'); return; }
 
-  const elJenis = document.getElementById('inp-jenis');
   const elPeriode = document.getElementById('inp-periode');
-  const jenis = ((elJenis ? elJenis.value : null) || 'MBA').replace(/\s/g, '_');
-  const periode = ((elPeriode ? elPeriode.value : null) || '10Agt_9Sept26').replace(/\s/g, '_');
+  const jenis = currentDataType || 'MBA';
+  const periode = ((elPeriode ? elPeriode.value : null) || 'Periode').replace(/\s/g, '_');
   const srcLabel = source === 'ps' ? 'PeopleSoft' : 'SAP';
   const filename = `Rekon_Fringe_Benefit_Tax_-${jenis}-_${srcLabel}_${periode}.xlsx`;
 
@@ -1906,24 +1936,19 @@ function showToast(msg) {
 // ---- INIT ----
 document.addEventListener('DOMContentLoaded', () => {
   switchTab('upload');
-  // Sync period/jenis labels when inputs change
-  ['inp-jenis', 'inp-periode'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.addEventListener('input', () => {
-        const elJ = document.getElementById('inp-jenis');
-        const elP = document.getElementById('inp-periode');
-        const jenis = (elJ ? elJ.value : null) || 'MBA';
-        const periode = (elP ? elP.value : null) || '10Agt_9Sept26';
-        ['ps', 'sap'].forEach(t => {
-          const el_j = document.getElementById('dl-jenis-' + t);
-          const el_p = document.getElementById('dl-periode-' + t);
-          if (el_j) el_j.textContent = jenis;
-          if (el_p) el_p.textContent = periode;
-        });
+  // Sync period labels when inputs change
+  const elP = document.getElementById('inp-periode');
+  if (elP) {
+    elP.addEventListener('input', () => {
+      const periode = elP.value || 'Periode';
+      const sumPeriod = document.getElementById('sum-Period');
+      if (sumPeriod) sumPeriod.textContent = periode;
+      ['ps', 'sap'].forEach(t => {
+        const el_p = document.getElementById('dl-Period-' + t);
+        if (el_p) el_p.textContent = periode;
       });
-    }
-  });
+    });
+  }
 
   // Close modal on ESC key
   document.addEventListener('keydown', (e) => {

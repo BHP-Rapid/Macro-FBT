@@ -694,10 +694,19 @@
                       class="w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-[10px] font-bold flex items-center justify-center shrink-0">1</span>Upload
                     file SAP dan PeopleSoft dalam format <code
                       class="bg-blue-100 px-1 rounded font-mono">.xlsx / .xls / .csv</code></li>
-                  <li class="flex gap-2"><span
-                      class="w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-[10px] font-bold flex items-center justify-center shrink-0">2</span>Sistem
-                    mencocokkan berdasarkan <code class="bg-blue-100 px-1 rounded font-mono">REFERENCE</code> (SAP) ↔
-                    <code class="bg-blue-100 px-1 rounded font-mono">HMS_INVOICE_NBR</code> (PS)
+                  <li class="flex items-start gap-2">
+                    <span class="w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
+                    <div>
+                      Sistem mencocokkan secara otomatis berdasarkan jenis file:
+                      <ul class="list-disc pl-4 mt-1 space-y-1">
+                        <li><b>MBA</b>: <code class="bg-blue-100 px-1 rounded font-mono text-[9px]">REFERENCE</code> ↔
+                          <code class="bg-blue-100 px-1 rounded font-mono text-[9px]">HMS_INVOICE_NBR</code></li>
+                        <li><b>FSA</b>: <code class="bg-blue-100 px-1 rounded font-mono text-[9px]">TEXT254</code> ↔ <code
+                            class="bg-blue-100 px-1 rounded font-mono text-[9px]">HMS_FSA_TRANS_ID</code></li>
+                        <li><b>C&B</b>: <code class="bg-blue-100 px-1 rounded font-mono text-[9px]">REFERENCE</code> ↔
+                          <code class="bg-blue-100 px-1 rounded font-mono text-[9px]">ECS_RMB_SAP_REF</code></li>
+                      </ul>
+                    </div>
                   </li>
                   <li class="flex gap-2"><span
                       class="w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-[10px] font-bold flex items-center justify-center shrink-0">3</span>Preview
@@ -716,39 +725,54 @@
                 </p>
               </div>
 
-              <!-- Ketentuan Nama File -->
+              <!-- Download Sample Template -->
               <div>
                 <h4 class="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Ketentuan Nama File
+                  📥 Download Template Contoh File
                 </h4>
-                <div class="space-y-2">
-                  <div class="bg-white border border-blue-200 rounded-lg p-2.5">
-                    <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">File SAP</p>
-                    <code
-                      class="text-xs text-navy-700 font-mono bg-blue-50 px-2 py-0.5 rounded block">HDC_FBT_SAP_[TYPE]_[PERIOD].xlsx</code>
-                    <p class="text-[10px] text-slate-500 mt-1">Contoh: <span
-                        class="font-mono text-slate-700">HDC_FBT_SAP_MBA_10Agt_9Sept26.xlsx</span></p>
-                    <p class="text-[10px] text-slate-400 mt-0.5">Kolom wajib: <span class="font-mono">REFERENCE, AMOUNT,
-                        EMPLID, ITEM</span></p>
-                  </div>
-                  <div class="bg-white border border-blue-200 rounded-lg p-2.5">
-                    <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">File PeopleSoft</p>
-                    <code
-                      class="text-xs text-navy-700 font-mono bg-blue-50 px-2 py-0.5 rounded block">HDC_FBT_PS_[TYPE]_[PERIOD].xlsx</code>
-                    <p class="text-[10px] text-slate-500 mt-1">Contoh: <span
-                        class="font-mono text-slate-700">HDC_FBT_PS_MBA_10Agt_9Sept26.xlsx</span></p>
-                    <p class="text-[10px] text-slate-400 mt-0.5">Kolom wajib: <span class="font-mono">HMS_INVOICE_NBR,
-                        AMOUNT, EMPLID, ITEM</span></p>
-                  </div>
+                <div class="flex flex-col gap-2">
+                  <button onclick="downloadSampleTemplate('sap')"
+                    class="flex items-center justify-between px-4 py-2 bg-navy-800 hover:bg-navy-700 text-white text-xs font-semibold rounded-xl shadow-sm transition w-full max-w-[220px]">
+                    <span class="flex items-center gap-2">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Template SAP (.xlsx)
+                    </span>
+                  </button>
+                  <button onclick="downloadSampleTemplate('ps_mba')"
+                    class="flex items-center justify-between px-4 py-2 bg-navy-800 hover:bg-navy-700 text-white text-xs font-semibold rounded-xl shadow-sm transition w-full max-w-[220px]">
+                    <span class="flex items-center gap-2">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Template PS (MBA)
+                    </span>
+                  </button>
+                  <button onclick="downloadSampleTemplate('ps_fsa')"
+                    class="flex items-center justify-between px-4 py-2 bg-navy-800 hover:bg-navy-700 text-white text-xs font-semibold rounded-xl shadow-sm transition w-full max-w-[220px]">
+                    <span class="flex items-center gap-2">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Template PS (FSA)
+                    </span>
+                  </button>
+                  <button onclick="downloadSampleTemplate('ps_cb')"
+                    class="flex items-center justify-between px-4 py-2 bg-navy-800 hover:bg-navy-700 text-white text-xs font-semibold rounded-xl shadow-sm transition w-full max-w-[220px]">
+                    <span class="flex items-center gap-2">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Template PS (C&B)
+                    </span>
+                  </button>
                 </div>
+                <p class="text-[10px] text-slate-400 mt-2">Pilih template sesuai dengan jenis laporan Anda. Template hanya berisi baris Header standar.</p>
               </div>
 
               <!-- Format & Ketentuan Tambahan -->
-              <div class="md:col-span-2">
+              <div class="md:col-span-2 pt-2 border-t border-blue-100">
                 <h4 class="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -756,42 +780,12 @@
                   </svg>
                   Ketentuan &amp; Catatan Penting
                 </h4>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] text-slate-700">
+                <div class="flex flex-col gap-2 text-[11px] text-slate-700">
                   <div class="flex gap-1.5 items-start"><span class="text-amber-500 shrink-0">⚠️</span>Header baris
                     pertama harus berisi nama kolom (bukan data)</div>
                   <div class="flex gap-1.5 items-start"><span class="text-blue-500 shrink-0">📋</span>Pastikan sheet
                     aktif adalah sheet pertama pada file Excel</div>
-                  <div class="flex gap-1.5 items-start"><span class="text-blue-500 shrink-0">💰</span>Kolom <span
-                      class="font-mono mx-0.5">AMOUNT</span> harus berupa angka numerik (tidak ada format currency)
-                  </div>
-                  <div class="flex gap-1.5 items-start"><span class="text-emerald-600 shrink-0">✅</span>Invoice number
-                    harus unique per baris di masing-masing sistem</div>
                 </div>
-              </div>
-
-              <!-- Download Sample Template -->
-              <div class="md:col-span-2 pt-2 border-t border-blue-100">
-                <p class="text-xs font-bold text-blue-800 mb-2">📥 Download Template Contoh File</p>
-                <div class="flex flex-wrap gap-2">
-                  <button onclick="downloadSampleTemplate('sap')"
-                    class="flex items-center gap-2 px-4 py-2 bg-navy-800 hover:bg-navy-700 text-white text-xs font-semibold rounded-xl shadow-sm transition">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    Template SAP (.xlsx)
-                  </button>
-                  <button onclick="downloadSampleTemplate('ps')"
-                    class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm transition">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    Template PeopleSoft (.xlsx)
-                  </button>
-                </div>
-                <p class="text-[10px] text-slate-400 mt-1.5">File template sudah berisi contoh data dan format kolom
-                  yang benar untuk di-upload ke sistem.</p>
               </div>
 
             </div>
@@ -821,35 +815,7 @@
 
         <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
 
-          <!-- PeopleSoft Dropzone -->
-          <div id="dz-ps" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'ps')"
-            class="relative border-2 border-dashed border-blue-300 bg-blue-50/40 rounded-2xl p-6 text-center flex flex-col items-center justify-center hover:bg-blue-50/70 transition group cursor-pointer"
-            onclick="document.getElementById('fi-ps').click()">
-            <input type="file" id="fi-ps" accept=".xlsx,.xls,.csv" onchange="onFileSelect(event,'ps')" class="hidden">
-
-            <div
-              class="w-14 h-14 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mb-3 shadow-inner group-hover:scale-105 transition">
-              <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-
-            <span
-              class="px-2.5 py-0.5 text-[10px] font-bold bg-blue-200 text-blue-800 rounded-full mb-2 uppercase tracking-wider">File
-              01 · PeopleSoft HR</span>
-            <h3 id="ps-fname" class="font-bold text-sm text-slate-800">Click or Drag PeopleSoft File</h3>
-            <p id="ps-fdesc" class="text-xs text-slate-500 font-mono mt-1">Format: <span
-                class="font-bold text-blue-700">HDC_FBT_PS_[TYPE]_[PERIOD].xlsx</span></p>
-
-            <div id="ps-badge"
-              class="mt-4 bg-white/80 border border-slate-200 px-4 py-2 rounded-xl text-xs flex items-center gap-2 shadow-sm text-slate-500">
-              <span>Waiting for PeopleSoft file...</span>
-            </div>
-            <div id="ps-validation-msg" class="mt-2 text-[11px] hidden"></div>
-          </div>
-
-          <!-- SAP Dropzone -->
+          <!-- SAP Dropzone (Kiri) -->
           <div id="dz-sap" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'sap')"
             class="relative border-2 border-dashed border-blue-300 bg-blue-50/40 rounded-2xl p-6 text-center flex flex-col items-center justify-center hover:bg-blue-50/70 transition group cursor-pointer"
             onclick="document.getElementById('fi-sap').click()">
@@ -865,7 +831,7 @@
 
             <span
               class="px-2.5 py-0.5 text-[10px] font-bold bg-blue-200 text-blue-800 rounded-full mb-2 uppercase tracking-wider">File
-              02 · SAP Finance</span>
+              01 · SAP Finance</span>
             <h3 id="sap-fname" class="font-bold text-sm text-slate-800">Click or Drag SAP File</h3>
             <p id="sap-fdesc" class="text-xs text-slate-500 font-mono mt-1">Format: <span
                 class="font-bold text-blue-700">HDC_FBT_SAP_[TYPE]_[PERIOD].xlsx</span></p>
@@ -875,6 +841,34 @@
               <span>Waiting for SAP file...</span>
             </div>
             <div id="sap-validation-msg" class="mt-2 text-[11px] hidden"></div>
+          </div>
+
+          <!-- PeopleSoft Dropzone (Kanan) -->
+          <div id="dz-ps" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'ps')"
+            class="relative border-2 border-dashed border-blue-300 bg-blue-50/40 rounded-2xl p-6 text-center flex flex-col items-center justify-center hover:bg-blue-50/70 transition group cursor-pointer"
+            onclick="document.getElementById('fi-ps').click()">
+            <input type="file" id="fi-ps" accept=".xlsx,.xls,.csv" onchange="onFileSelect(event,'ps')" class="hidden">
+
+            <div
+              class="w-14 h-14 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mb-3 shadow-inner group-hover:scale-105 transition">
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+
+            <span
+              class="px-2.5 py-0.5 text-[10px] font-bold bg-blue-200 text-blue-800 rounded-full mb-2 uppercase tracking-wider">File
+              02 · PeopleSoft HR</span>
+            <h3 id="ps-fname" class="font-bold text-sm text-slate-800">Click or Drag PeopleSoft File</h3>
+            <p id="ps-fdesc" class="text-xs text-slate-500 font-mono mt-1">Format: <span
+                class="font-bold text-blue-700">HDC_FBT_PS_[TYPE]_[PERIOD].xlsx</span></p>
+
+            <div id="ps-badge"
+              class="mt-4 bg-white/80 border border-slate-200 px-4 py-2 rounded-xl text-xs flex items-center gap-2 shadow-sm text-slate-500">
+              <span>Waiting for PeopleSoft file...</span>
+            </div>
+            <div id="ps-validation-msg" class="mt-2 text-[11px] hidden"></div>
           </div>
         </div>
 
@@ -1422,13 +1416,21 @@
 
       <!-- Reports Ready to Download -->
       <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-        <div class="mb-5">
-          <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-            Reports Ready to Download
-          </h3>
-          <p class="text-[11px] text-slate-400 mt-0.5">Both files are generated in-browser and ready to be downloaded
-          </p>
+        <div
+          class="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div>
+            <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+              Reports Ready to Download
+            </h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">Both files are generated in-browser and ready to be downloaded
+            </p>
+          </div>
+          <div class="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">Periode:</span>
+            <input type="text" id="inp-periode" value="10Agt_9Sept26"
+              class="w-32 bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-mono text-slate-700 shadow-sm focus:outline-none focus:border-emerald-400">
+          </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
