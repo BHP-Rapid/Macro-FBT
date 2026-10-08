@@ -4,10 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SMART FBT - Automated Benefit Tax Reconciliation & Upload Tool</title>
-  <meta name="description"
-    content="SMART FBT: Automated SAP & PeopleSoft Reconciliation System for Fringe Benefit Tax. Upload files, compare data, and download difference reports instantly.">
-
+  <title>Fringe Benefit Tax (FBT) Reconciliation Tool</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- SheetJS -->
@@ -55,14 +52,6 @@
       font-family: 'JetBrains Mono', monospace;
     }
 
-    /* ==========================================
-       DESIGN SYSTEM: SMART FBT
-       Philosophy: Clean white canvas.
-       Color only appears to signal meaning.
-       Navy = Brand/Chrome only.
-       Color = Status differentiation only.
-       ========================================== */
-
     /* Scrollbar */
     ::-webkit-scrollbar {
       width: 5px;
@@ -88,8 +77,6 @@
       background-color: #f0f4ff !important;
     }
 
-    /* ---- STATUS BADGES (purposeful color) ---- */
-    /* Principle: soft background, dark text, clear left-border accent */
     .badge-matched {
       background: #f0fdf4;
       color: #15803d;
@@ -125,7 +112,6 @@
       font-weight: 700;
     }
 
-    /* ---- ROW HIGHLIGHTS (very subtle, just a whisper of color) ---- */
     .row-match {
       background: #ffffff;
     }
@@ -584,15 +570,8 @@
           </div>
           <div>
             <div class="flex items-center gap-2">
-              <span class="text-white font-bold text-base tracking-tight">SMART FBT</span>
-              <span
-                class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold bg-blue-500/30 text-blue-200 rounded-full border border-blue-400/30">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></span>
-                PHASE 1 ACTIVE
-              </span>
+              <span class="text-white font-bold text-base tracking-tight">FBT Reconciliation Tool</span>
             </div>
-            <p class="text-navy-300 text-[11px] font-medium hidden sm:block">Automated Benefit Tax Reconciliation &
-              Upload Tool</p>
           </div>
         </div>
 
@@ -614,7 +593,7 @@
   </nav>
 
   <!-- ===== PHASE STEPPER ===== -->
-  <div class="bg-white border-b border-slate-200 shadow-sm">
+  <div class="bg-white border-b border-slate-200 shadow-sm sticky top-16 z-30">
     <div class="w-full px-4 sm:px-6 lg:px-8">
       <div class="stepper-wrap">
 
@@ -920,11 +899,10 @@
 
             <button id="btn-process" onclick="runComparison()" disabled
               class="flex items-center gap-2 bg-navy-800 hover:bg-navy-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-sm px-6 py-2.5 rounded-xl shadow transition">
-              <svg id="btn-icon-compare" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              <svg id="btn-icon-compare" class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
               </svg>
-              Compare & Reconcile
+              Start Reconciliation
             </button>
           </div>
         </div>
@@ -932,37 +910,33 @@
 
       <!-- Legend Card -->
       <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-        <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Remarks Status Rekonsiliasi (4
-          Kategori)</h3>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-          <div class="flex items-start gap-2">
-            <span class="badge-matched px-2 py-0.5 font-bold text-[10px] shrink-0 mt-0.5"
+        <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Reconciliation Status Remarks (5
+          Categories)</h3>
+        <div class="flex flex-col gap-2.5 text-xs">
+          <div class="flex items-center gap-3">
+            <span class="badge-matched px-2.5 py-1 font-bold text-[10px] w-28 text-center shrink-0"
               style="border-radius: 20px;">MATCH</span>
-            <span class="text-slate-600">Found in <strong>PS & SAP</strong>, nominals <strong>match</strong></span>
+            <span class="text-slate-600">Found in PeopleSoft &amp; SAP, data match</span>
           </div>
-          <div class="flex items-start gap-2">
-            <span class="badge-excess-sap px-2 py-0.5 font-bold text-[10px] shrink-0 mt-0.5"
+          <div class="flex items-center gap-3">
+            <span class="badge-excess-sap px-2.5 py-1 font-bold text-[10px] w-28 text-center shrink-0"
               style="border-radius: 20px;">SAP &gt; PS</span>
-            <span class="text-slate-600">Found in both, SAP is <strong>greater</strong>
-              (Excess/Advance)</span>
+            <span class="text-slate-600">Found in both, SAP is greater</span>
           </div>
-          <div class="flex items-start gap-2">
-            <span class="badge-excess-ps px-2 py-0.5 font-bold text-[10px] shrink-0 mt-0.5"
+          <div class="flex items-center gap-3">
+            <span class="badge-excess-ps px-2.5 py-1 font-bold text-[10px] w-28 text-center shrink-0"
               style="border-radius: 20px;">PS &gt; SAP</span>
-            <span class="text-slate-600">Ditemukan di keduanya, PS <strong>lebih besar</strong> (Klaim belum
-              terbayar)</span>
+            <span class="text-slate-600">Found in both, PeopleSoft is greater</span>
           </div>
-          <div class="flex items-start gap-2 flex-col gap-1">
-            <div class="flex items-start gap-2">
-              <span class="badge-only-ps px-2 py-0.5 font-bold text-[10px] shrink-0" style="border-radius: 20px;">PSFT
-                Only</span>
-              <span class="text-slate-600">Present in PS, <strong>missing in SAP</strong></span>
-            </div>
-            <div class="flex items-start gap-2">
-              <span class="badge-only-sap px-2 py-0.5 font-bold text-[10px] shrink-0" style="border-radius: 20px;">SAP
-                Only</span>
-              <span class="text-slate-600">Present in SAP, <strong>missing in PS</strong></span>
-            </div>
+          <div class="flex items-center gap-3">
+            <span class="badge-only-ps px-2.5 py-1 font-bold text-[10px] w-28 text-center shrink-0"
+              style="border-radius: 20px;">PeopleSoft Only</span>
+            <span class="text-slate-600">Present in PeopleSoft only</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="badge-only-sap px-2.5 py-1 font-bold text-[10px] w-28 text-center shrink-0"
+              style="border-radius: 20px;">SAP Only</span>
+            <span class="text-slate-600">Present in SAP only</span>
           </div>
         </div>
       </div>
@@ -1090,7 +1064,7 @@
                     class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
                     <input type="checkbox" id="chk-ps-receipt" class="col-checkbox chk-ps"
                       onchange="toggleColumn('ps-receipt')">
-                    <span class="text-xs font-medium text-slate-700">Tanggal Kuitansi</span>
+                    <span class="text-xs font-medium text-slate-700">Receipt Date</span>
                   </label>
                   <label
                     class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
@@ -1139,7 +1113,7 @@
                     class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
                     <input type="checkbox" id="chk-sap-postdt" class="col-checkbox chk-sap"
                       onchange="toggleColumn('sap-postdt')">
-                    <span class="text-xs font-medium text-slate-700">Tanggal Posting</span>
+                    <span class="text-xs font-medium text-slate-700">Posting Date</span>
                   </label>
                   <label
                     class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer transition">
@@ -1172,7 +1146,8 @@
         </div>
 
         <!-- Table -->
-        <div id="compare-table-wrap" class="overflow-x-auto overflow-y-auto max-h-[480px] relative border-b border-slate-200">
+        <div id="compare-table-wrap"
+          class="overflow-x-auto overflow-y-auto max-h-[480px] relative border-b border-slate-200">
           <table id="compare-table" class="text-xs text-left w-full"
             style="border-collapse:separate; border-spacing:0;">
             <thead class="table-th">
@@ -1191,7 +1166,7 @@
               <!-- Row 2: sub-column headers -->
               <tr>
                 <!-- PS -->
-                <th class="col-ps-receipt  col-hidden col-group-ps px-3 py-1.5 border-l border-green-100">Tgl Kuitansi
+                <th class="col-ps-receipt  col-hidden col-group-ps px-3 py-1.5 border-l border-green-100">Receipt Date
                 </th>
                 <th class="col-ps-claimcat col-hidden col-group-ps px-3 py-1.5 border-l border-green-100 cursor-pointer"
                   onclick="setSort('psClaimCat')">Claim Cat <span class="text-slate-300">⇅</span></th>
@@ -1206,7 +1181,7 @@
                   onclick="setSort('psTotal')">Total PS (IDR) <span class="text-slate-300">⇅</span></th>
                 <!-- SAP -->
                 <th class="col-sap-docnbr           col-group-sap px-3 py-1.5 border-l border-blue-100">Doc Number</th>
-                <th class="col-sap-postdt  col-hidden col-group-sap px-3 py-1.5 border-l border-blue-100">Tgl Posting
+                <th class="col-sap-postdt  col-hidden col-group-sap px-3 py-1.5 border-l border-blue-100">Posting Date
                 </th>
                 <th class="col-sap-company col-hidden col-group-sap px-3 py-1.5 border-l border-blue-100 text-center">
                   Company</th>
@@ -1250,7 +1225,8 @@
                 <option value="50">50</option>
                 <option value="100">100</option>
               </select>
-              <svg class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
               </svg>
             </div>
@@ -1259,12 +1235,19 @@
 
           <!-- Zone 2: Navigation Pill -->
           <div id="pagination-controls" class="bg-slate-100/90 p-1 rounded-2xl flex items-center gap-0.5 shadow-inner">
-            <button disabled class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-300 cursor-not-allowed">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            <button disabled
+              class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-300 cursor-not-allowed">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+              </svg>
             </button>
-            <button class="w-8 h-8 flex items-center justify-center rounded-xl bg-blue-600 text-white font-bold text-xs shadow-sm">1</button>
-            <button disabled class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-300 cursor-not-allowed">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            <button
+              class="w-8 h-8 flex items-center justify-center rounded-xl bg-blue-600 text-white font-bold text-xs shadow-sm">1</button>
+            <button disabled
+              class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-300 cursor-not-allowed">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
             </button>
           </div>
 
@@ -1591,7 +1574,7 @@
         <span class="font-mono">Browser-only · No server · Edge Compatible</span>
       </div>
       <!-- Bottom Right: Copyright -->
-      <p>© 2026 SMART FBT · Automated Benefit Tax Reconciliation &amp; Upload Tool</p>
+      <p>© 2026 Fringe Benefit Tax (FBT) Reconciliation Tool</p>
     </div>
   </footer>
 
