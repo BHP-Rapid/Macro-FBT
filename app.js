@@ -868,7 +868,7 @@ function runComparison() {
         status = 'notfound'; statusLabel = 'SAP Only'; statusClass = 'badge-only-sap';
       }
 
-      reconData.push({
+      const rowData = {
         invoice: key,
         emplid: p ? p.emplid : (s ? s.persNo : '—'),
         psTotal, sapTotal, diff,
@@ -878,7 +878,9 @@ function runComparison() {
         pData: p || null,
         sData: s || null,
         dataType: currentDataType
-      });
+      };
+      rowData.ket = buildKetSAP(rowData);
+      reconData.push(rowData);
     });
 
     // Set Date Range & Type labels
@@ -1001,18 +1003,32 @@ function formatShortIDR(val) {
 
 // ---- KPI UPDATER ----
 function updateKPIs() {
-  const total = reconData.length;
-  const matched = reconData.filter(d => d.status === 'match').length;
-  const mismatch = reconData.filter(d => d.status === 'mismatch').length;
-  const notfound = reconData.filter(d => d.status === 'notfound').length;
-  const grandPS = reconData.reduce((s, d) => s + d.psTotal, 0);
-  const grandSAP = reconData.reduce((s, d) => s + d.sapTotal, 0);
+  // 1. Calculate static counts for the filter pills (always from reconData)
+  const fullTotal = reconData.length;
+  const fullMatched = reconData.filter(d => d.status === 'match').length;
+  const fullMismatch = reconData.filter(d => d.status === 'mismatch').length;
+  const fullNotfound = reconData.filter(d => d.status === 'notfound').length;
+
+  setText('cnt-all', fullTotal);
+  setText('cnt-match', fullMatched);
+  setText('cnt-mismatch', fullMismatch);
+  setText('cnt-notfound', fullNotfound);
+
+  // 2. Calculate dynamic totals for the main KPI Cards (from filteredData)
+  const activeData = (typeof filteredData !== 'undefined' && filteredData) ? filteredData : reconData;
+
+  const actTotal = activeData.length;
+  const actMatched = activeData.filter(d => d.status === 'match').length;
+  const actMismatch = activeData.filter(d => d.status === 'mismatch').length;
+
+  const grandPS = activeData.reduce((s, d) => s + d.psTotal, 0);
+  const grandSAP = activeData.reduce((s, d) => s + d.sapTotal, 0);
   const grandDiff = grandSAP - grandPS;
 
-  const matchPct = total > 0 ? ((matched / total) * 100).toFixed(1) : 0;
+  const matchPct = fullTotal > 0 ? ((actMatched / fullTotal) * 100).toFixed(1) : 0;
 
-  setText('kpi-match', matched.toLocaleString('id-ID').replace(/,/g, '.'));
-  setText('kpi-match-sub', `${matchPct}% (${total.toLocaleString('id-ID').replace(/,/g, '.')} Total Unik)`);
+  setText('kpi-match', actMatched.toLocaleString('id-ID').replace(/,/g, '.'));
+  setText('kpi-match-sub', `${matchPct}% dari Seluruh Invoice`);
 
   setText('kpi-ps-short', formatShortIDR(grandPS));
   setText('kpi-ps-total', 'Rp ' + Math.round(grandPS).toLocaleString('id-ID').replace(/,/g, '.') + ',00');
@@ -1020,16 +1036,13 @@ function updateKPIs() {
   setText('kpi-sap-short', formatShortIDR(grandSAP));
   setText('kpi-sap-total', 'Rp ' + Math.round(grandSAP).toLocaleString('id-ID').replace(/,/g, '.') + ',00');
 
-  setText('kpi-mismatch-count', `${mismatch} Invoice`);
+  // count all mismatches and notfounds (everything except match) to show in red diff card?
+  // User asked for "Selisih (IDR)", we can just use actMismatch since those are the ones with mismatching values
+  setText('kpi-mismatch-count', `${actMismatch} Invoice`);
   setText('kpi-diff-short', formatShortIDR(grandDiff));
 
   const diffPrefix = grandDiff >= 0 ? '+' : '-';
   setText('kpi-diff', `${diffPrefix}Rp ${Math.round(Math.abs(grandDiff)).toLocaleString('id-ID').replace(/,/g, '.')},00`);
-
-  setText('cnt-all', total);
-  setText('cnt-match', matched);
-  setText('cnt-mismatch', mismatch);
-  setText('cnt-notfound', notfound);
 }
 
 // ---- SUMMARY PAGE ----
@@ -1152,6 +1165,7 @@ function applyFilter() {
     });
   }
 
+  updateKPIs();
   renderTable();
 }
 
@@ -1288,7 +1302,7 @@ function renderTable() {
       d.diff < 0 ? '<span class="text-rose-500 ml-1">↓</span>' : '';
 
     // ---- Keterangan ----
-    const ket = buildKetSAP(d);
+    const ket = d.ket;
 
     // ---- Chips on total cells ----
     const psTotalCell = d.pData
@@ -1359,8 +1373,11 @@ function renderTable() {
         <td class="col-rec-diff border-l border-amber-100 text-right font-mono ${diffCellClass}${hasDiff ? ' bg-amber-50/50' : ''}">
           ${hasDiff ? `${diffStr}${diffArrow}` : '<span class="text-slate-300">—</span>'}
         </td>
-        <td class="col-rec-ket border-l border-amber-100 text-slate-600 align-top">
-          <div class="whitespace-normal break-words w-48 text-[10px] leading-snug">${ket}</div>
+        <td class="group col-rec-ket border-l border-amber-100 text-slate-600 align-top p-1 relative">
+          <div class="relative w-48 h-full">
+            <textarea onchange="updateNote('${d.invoice}', this.value)" title="Klik untuk mengedit keterangan" class="w-full bg-transparent hover:bg-white border border-transparent group-hover:border-slate-200 rounded px-1.5 py-1 pr-6 text-[10px] leading-snug focus:outline-none focus:border-navy-400 focus:bg-white transition resize-none overflow-hidden" rows="2" oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'">${ket}</textarea>
+            <svg class="w-3.5 h-3.5 text-slate-300 absolute top-2 right-1.5 group-hover:text-slate-500 transition pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+          </div>
         </td>
         <td class="col-rec-status border-l border-amber-100 text-center">
           <span class="px-2 py-0.5 font-bold text-[10px] ${d.statusClass} whitespace-nowrap" style="border-radius:20px;">${d.statusLabel}</span>
@@ -1376,6 +1393,13 @@ function renderTable() {
   }).join('');
 
   updatePagination(filteredData.length, totalPages, start, end);
+}
+
+function updateNote(invoice, val) {
+  const row = reconData.find(r => r.invoice === invoice);
+  if (row) {
+    row.ket = val;
+  }
 }
 
 function getColVal(rawRows, row, colName, fallbackIdx) {
@@ -1661,7 +1685,7 @@ function downloadReport(source) {
         status = d.statusLabel;
         sapTotal = d.sapTotal;
         selisih = d.diff;
-        ket = buildKetPS(d);
+        ket = d.ket;
       }
       sheetData.push([...row, status, sapTotal, selisih, ket]);
     }
@@ -1688,7 +1712,7 @@ function downloadReport(source) {
         status = d.statusLabel;
         psTotal = d.psTotal;
         selisih = d.diff;
-        ket = buildKetSAP(d);
+        ket = d.ket;
       }
       sheetData.push([...row, status, psTotal, selisih, ket]);
     }
@@ -1722,7 +1746,7 @@ function buildKetPS(d) {
 }
 
 function buildKetSAP(d) {
-  if (d.status === 'match') return 'Matched - Nominal dan EMPLID sesuai';
+  if (d.status === 'match') return 'Matched. Data sesuai';
   if (d.statusLabel === 'SAP Only') return 'Data tidak ditemukan di PeopleSoft.';
   if (d.statusLabel === 'PSFT Only') return 'Data tidak ditemukan di SAP.';
 
@@ -1730,51 +1754,8 @@ function buildKetSAP(d) {
     return `Selisih NIK: PS (${d.pData.emplid}) vs SAP (${d.sData.persNo}). Pembayaran berpotensi salah sasaran!`;
   }
 
-  // DETECTIVE LOGIC
   const diffAbs = Math.round(Math.abs(d.diff));
-
-  // 1. Cek Text SAP
-  if (d.sData && d.sData.lines) {
-    for (const ln of d.sData.lines) {
-      const txt = (ln.text || '').toLowerCase();
-      const taxCode = (ln.taxCode || 'V0').toUpperCase();
-
-      if (txt.includes('excess') || txt.includes('kelebihan') || txt.includes('limit') || txt.includes('plafon')) {
-        if (Math.round(ln.glAmt) === diffAbs || d.dataType === 'MBA') {
-          return `Terdapat potongan Limit/Excess sebesar Rp ${diffAbs.toLocaleString('id-ID')}`;
-        }
-      }
-      if (txt.includes('tax') || txt.includes('pajak') || txt.includes('pph') || (taxCode !== 'V0' && taxCode !== '')) {
-        if (Math.round(ln.glAmt) === diffAbs) {
-          return `Terdapat potongan Pajak (Withholding Tax) sebesar Rp ${diffAbs.toLocaleString('id-ID')}`;
-        }
-      }
-      if (txt.includes('kurs') || txt.includes('exc rate')) {
-        return `Terdapat penyesuaian selisih kurs sebesar Rp ${diffAbs.toLocaleString('id-ID')}`;
-      }
-    }
-  }
-
-  // 2. Cek PS Partial Reject (khusus C&B/FSA)
-  if ((d.dataType === 'CB' || d.dataType === 'FSA') && d.pData && d.pData.items) {
-    for (const it of d.pData.items) {
-      if (Math.round(it.reimb) === diffAbs) {
-        const desc = d.dataType === 'CB' ? it.cat : it.medCd;
-        return `Kuitansi untuk [${desc}] senilai Rp ${diffAbs.toLocaleString('id-ID')} kemungkinan ditolak (Rejected) atau tidak dibayarkan.`;
-      }
-    }
-  }
-
-  // 3. Fallback: Tampilkan text SAP
-  let fallbackText = 'Selisih tidak dapat diidentifikasi secara otomatis.';
-  if (d.sData && d.sData.lines.length > 0) {
-    const uniqueTexts = [...new Set(d.sData.lines.map(x => x.text).filter(Boolean))];
-    if (uniqueTexts.length > 0) {
-      fallbackText = `Selisih Rp ${diffAbs.toLocaleString('id-ID')}. Indikasi SAP: ` + uniqueTexts.join(' | ');
-    }
-  }
-
-  return fallbackText;
+  return `Terdapat selisih nominal sebesar Rp ${diffAbs.toLocaleString('id-ID')}.`;
 }
 
 // ============================================================
