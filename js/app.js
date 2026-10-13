@@ -1,9 +1,3 @@
-// ============================================================
-// SMART FBT — app.js
-// Automated Benefit Tax Reconciliation & Upload Tool
-// Phase 1: SAP vs PeopleSoft Reconciliation Engine
-// ============================================================
-
 // ---- STATE ----
 let currentDataType = 'MBA';
 let rawPsRows = [];   // Raw parsed rows from PeopleSoft file
@@ -23,12 +17,9 @@ let sortAsc = true;
 let psMap = new Map(); // key: HMS_INVOICE_NBR -> { emplid, totalReimb, items[] }
 let sapMap = new Map(); // key: REFERENCE      -> { persNo, totalGL, lines[] }
 
-// ============================================================
-// TAB / PANEL NAVIGATION
-// ============================================================
 function switchTab(tab) {
   if (tab !== 'upload' && reconData.length === 0) {
-    showToast('⚠️ Silakan upload file dan jalankan rekonsiliasi terlebih dahulu.');
+    showToast(' Please upload the file and run the reconciliation first.');
     return;
   }
 
@@ -49,7 +40,7 @@ function switchTab(tab) {
 
 function handleStepperClick(tab, stepNum) {
   if (stepNum > 1 && reconData.length === 0) {
-    showToast('⚠️ Silakan upload file dan jalankan rekonsiliasi terlebih dahulu.');
+    showToast(' Please upload the file and run the reconciliation first.');
     return;
   }
   switchTab(tab);
@@ -202,13 +193,13 @@ function downloadSampleTemplate(type) {
 // SMART MULTI-VARIANT FILE DETECTION & NORMALIZATION
 // ============================================================
 function parseFileName(fileName) {
-  if (!fileName) return { valid: false, reason: 'Nama file tidak boleh kosong.' };
+  if (!fileName) return { valid: false, reason: 'File name cannot be empty.' };
 
   const match = fileName.trim().match(/\.([a-zA-Z0-9]+)$/i);
   if (!match) {
     return {
       valid: false,
-      reason: 'File tidak memiliki ekstensi.'
+      reason: 'File has no extension.'
     };
   }
 
@@ -216,7 +207,7 @@ function parseFileName(fileName) {
   if (!['xlsx', 'xls', 'csv'].includes(ext)) {
     return {
       valid: false,
-      reason: `Format ekstensi .${ext} tidak didukung. Harap gunakan file .xlsx, .xls, atau .csv.`
+      reason: `Extension .${ext} not supported. Please use .xlsx, .xls, or .csv.`
     };
   }
 
@@ -254,9 +245,9 @@ function findHeaderRowIndex(rows) {
   return 0;
 }
 
-function detectFileProfile(rows) {
+function detectFileProfile(rows, fileName = '') {
   if (!rows || rows.length < 1) {
-    return { valid: false, system: 'unknown', reason: 'File kosong atau tidak memiliki data.' };
+    return { valid: false, system: 'unknown', reason: 'File is empty or has no data.' };
   }
 
   const hdrIdx = findHeaderRowIndex(rows);
@@ -278,11 +269,19 @@ function detectFileProfile(rows) {
   const hasSapSeq = normalized.some(h => h === 'HMS_FBT_SEQNBR' || h === 'HMS_DOC_NBR');
 
   let psScore = 0;
-  let psModule = 'MBA';
+
+  // Deteksi Tipe (Module) dari Nama File jika memungkinkan
+  const upName = fileName.toUpperCase();
+  let guessMod = 'UNKNOWN';
+  if (upName.includes('MBA') || upName.includes('MEDICAL')) guessMod = 'MBA';
+  else if (upName.includes('FSA') || upName.includes('FLEX')) guessMod = 'FSA';
+  else if (upName.includes('CB') || upName.includes('C&B') || upName.includes('C%26B')) guessMod = 'CB';
+
+  let psModule = guessMod !== 'UNKNOWN' ? guessMod : 'MBA';
   if (hasEmplid) psScore += 2;
-  if (hasPsMba) { psScore += 4; psModule = 'MBA'; }
-  if (hasPsCb) { psScore += 4; psModule = 'CB'; }
-  if (hasPsFsa) { psScore += 4; psModule = 'FSA'; }
+  if (hasPsMba) { psScore += 4; if (guessMod === 'UNKNOWN') psModule = 'MBA'; }
+  if (hasPsCb) { psScore += 4; if (guessMod === 'UNKNOWN') psModule = 'CB'; }
+  if (hasPsFsa) { psScore += 4; if (guessMod === 'UNKNOWN') psModule = 'FSA'; }
   if (hasPsAnyMed) psScore += 2;
 
   let sapScore = 0;
@@ -307,19 +306,21 @@ function detectFileProfile(rows) {
 
   if (sapScore >= 3 && sapScore > psScore) {
     const keyCol = hasSapRef ? 'REFERENCE' : (hasSapAssign ? 'HMS_ASSIGNMENT' : 'REFERENCE');
-    let sapMod = hasSapAssign && !hasSapRef ? 'FSA' : 'UNKNOWN';
+    let sapMod = guessMod !== 'UNKNOWN' ? guessMod : (hasSapAssign && !hasSapRef ? 'FSA' : 'UNKNOWN');
 
-    // Periksa sampel baris pada kolom REFERENCE untuk mendeteksi tag CB atau MB
-    const refIdx = normalized.findIndex(h => h === 'REFERENCE' || h === 'REFERENCE_NUMBER');
-    if (refIdx >= 0) {
-      let cbCount = 0, mbCount = 0;
-      for (let r = hdrIdx + 1; r < Math.min(rows.length, hdrIdx + 25); r++) {
-        const val = String(rows[r]?.[refIdx] || '').toUpperCase();
-        if (val.includes('CB')) cbCount++;
-        if (val.includes('MB')) mbCount++;
+    // Jika masih UNKNOWN dari nama file, periksa sampel baris pada kolom REFERENCE untuk mendeteksi tag CB atau MB
+    if (sapMod === 'UNKNOWN') {
+      const refIdx = normalized.findIndex(h => h === 'REFERENCE' || h === 'REFERENCE_NUMBER');
+      if (refIdx >= 0) {
+        let cbCount = 0, mbCount = 0;
+        for (let r = hdrIdx + 1; r < Math.min(rows.length, hdrIdx + 25); r++) {
+          const val = String(rows[r]?.[refIdx] || '').toUpperCase();
+          if (val.includes('CB')) cbCount++;
+          if (val.includes('MB')) mbCount++;
+        }
+        if (cbCount > mbCount) sapMod = 'CB';
+        else if (mbCount > cbCount) sapMod = 'MBA';
       }
-      if (cbCount > mbCount) sapMod = 'CB';
-      else if (mbCount > cbCount) sapMod = 'MBA';
     }
 
     return {
@@ -337,7 +338,7 @@ function detectFileProfile(rows) {
     valid: false,
     system: 'unknown',
     headerIndex: hdrIdx,
-    reason: 'Kolom tidak dikenali sebagai format FBT PeopleSoft maupun SAP Finance.'
+    reason: 'Columns not recognized as PeopleSoft or SAP Finance FBT format.'
   };
 }
 
@@ -350,23 +351,23 @@ function validateUploadedFile(file, cleanRows, type) {
       status: 'rejected_name',
       nameParsed: null,
       profile: null,
-      title: 'Ekstensi Ditolak',
+      title: 'Extension Rejected',
       reason: nameRes.reason,
-      help: `Harap gunakan file .xlsx, .xls, atau .csv.`
+      help: `Please use .xlsx, .xls, or .csv files.`
     };
   }
 
   // 2. Validasi Kolom / Header File
-  const profile = detectFileProfile(cleanRows);
+  const profile = detectFileProfile(cleanRows, file.name);
   if (!profile.valid) {
     return {
       ok: false,
       status: 'rejected_header',
       nameParsed: nameRes,
       profile: null,
-      title: 'Format Kolom Ditolak',
-      reason: profile.reason || 'Struktur kolom file tidak memuat data transaksi FBT yang valid.',
-      help: `Pastikan file memuat kolom: ${type === 'ps' ? 'EMPLID dan HMS_INVOICE_NBR / ECS_RMB_SAP_REF' : 'REFERENCE / HMS_ASSIGNMENT dan HMS_PERS_NO'}.`
+      title: 'Column Format Rejected',
+      reason: profile.reason || 'File column structure does not contain valid FBT transaction data.',
+      help: `Ensure file contains columns: ${type === 'ps' ? 'EMPLID dan HMS_INVOICE_NBR / ECS_RMB_SAP_REF' : 'REFERENCE / HMS_ASSIGNMENT dan HMS_PERS_NO'}.`
     };
   }
 
@@ -377,9 +378,9 @@ function validateUploadedFile(file, cleanRows, type) {
       status: 'warn_swap',
       nameParsed: nameRes,
       profile: profile,
-      title: `⚠️ File ${profile.label} Salah Kotak`,
-      reason: `File ini terdeteksi sebagai <strong>${profile.label}</strong>, bukan ${type === 'ps' ? 'PeopleSoft' : 'SAP Finance'}.`,
-      help: 'Klik tombol "Tukar Posisi File" di bawah untuk menukar ke kotak yang benar.'
+      title: ` File ${profile.label} in Wrong Box`,
+      reason: `This file is detected as <strong>${profile.label}</strong>, not ${type === 'ps' ? 'PeopleSoft' : 'SAP Finance'}.`,
+      help: 'Click "Swap Files" button below to move to the correct box.'
     };
   }
 
@@ -390,7 +391,7 @@ function validateUploadedFile(file, cleanRows, type) {
     nameParsed: nameRes,
     profile: profile,
     title: `${profile.label} (${profile.module})`,
-    reason: `Struktur kolom terverifikasi valid untuk kotak ${type === 'ps' ? 'PeopleSoft' : 'SAP Finance'}.`,
+    reason: `Column structure verified valid for box ${type === 'ps' ? 'PeopleSoft' : 'SAP Finance'}.`,
     help: ''
   };
 }
@@ -413,28 +414,28 @@ function updateDropzoneUI(type) {
   const sizeFmt = (st.file.size / 1024 / 1024).toFixed(2) + ' MB';
 
   if (fname) fname.textContent = st.file.name;
-  if (fdesc) fdesc.textContent = `${st.fmt} · ${sizeFmt} · ${validRows.toLocaleString('id-ID')} rows`;
+  if (fdesc) fdesc.textContent = `${st.fmt} · ${sizeFmt} · ${validRows.toLocaleString('en-US')} rows`;
 
   dz.classList.remove('dz-valid', 'dz-invalid', 'dz-warn', 'border-blue-300', 'bg-blue-50/40');
   msg.classList.remove('hidden');
 
   if (v.status === 'valid') {
     dz.classList.add('dz-valid');
-    badge.innerHTML = `<span class="text-emerald-700 font-semibold flex items-center gap-1.5"><svg class="w-4 h-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> ${v.title} (${validRows.toLocaleString('id-ID')} baris)</span>`;
+    badge.innerHTML = `<span class="text-emerald-700 font-semibold flex items-center gap-1.5"><svg class="w-4 h-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> ${v.title} (${validRows.toLocaleString('en-US')} rows)</span>`;
     msg.className = 'mt-2 text-[11px] text-emerald-700 font-semibold flex items-center gap-1';
-    msg.innerHTML = `✅ Terverifikasi: Data ${v.title} cocok untuk kotak ini.`;
+    msg.innerHTML = ` Verified: ${v.title} is suitable for this box.`;
   } else if (v.status === 'warn_swap') {
     dz.classList.add('dz-warn');
     badge.innerHTML = `<span class="text-amber-800 font-bold flex items-center gap-1.5"><svg class="w-4 h-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg> ${v.title}</span>`;
     msg.className = 'mt-2 text-[11px] text-amber-900 bg-amber-50 border border-amber-300 rounded-xl p-2.5 flex flex-col sm:flex-row items-center justify-between gap-2 shadow-sm text-left';
     msg.innerHTML = `
       <div class="flex items-center gap-1.5">
-        <span class="text-base shrink-0">⚠️</span>
+        <span class="text-base shrink-0"></span>
         <span>${v.reason}</span>
       </div>
       <button type="button" onclick="event.stopPropagation(); swapUploadedFiles();" 
         class="px-2.5 py-1 bg-amber-700 hover:bg-amber-800 text-white font-bold text-[10px] rounded-lg shadow transition whitespace-nowrap shrink-0">
-        🔀 Tukar Posisi File
+        🔀 Swap Files
       </button>
     `;
   } else {
@@ -442,7 +443,7 @@ function updateDropzoneUI(type) {
     dz.classList.add('dz-invalid');
     badge.innerHTML = `<span class="text-rose-700 font-bold flex items-center gap-1.5"><svg class="w-4 h-4 text-rose-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg> ${v.title}</span>`;
     msg.className = 'mt-2 text-[11px] text-rose-800 bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-left';
-    msg.innerHTML = `⚠️ <strong>${v.reason}</strong><br><span class="text-slate-600 mt-1 block">${v.help}</span>`;
+    msg.innerHTML = ` <strong>${v.reason}</strong><br><span class="text-slate-600 mt-1 block">${v.help}</span>`;
   }
 }
 
@@ -547,7 +548,7 @@ function processFile(file, type) {
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
         handleParsedRows(rows, file, type, 'Excel');
       } catch (err) {
-        showToast('❌ Failed to read Excel: ' + err.message); console.error(err);
+        showToast(' Failed to read Excel: ' + err.message); console.error(err);
       }
     };
     reader.readAsArrayBuffer(file);
@@ -592,9 +593,9 @@ function handleParsedRows(rows, file, type, fmt) {
   checkReady();
 
   if (validation.ok) {
-    showToast('File ' + file.name + ' valid & siap diproses.');
+    showToast('File ' + file.name + ' valid & ready to process.');
   } else {
-    showToast('⚠️ ' + validation.title + ': Periksa status upload.');
+    showToast(' ' + validation.title + ': Check upload status.');
   }
 }
 
@@ -614,7 +615,7 @@ function checkReady() {
     if (psType !== 'UNKNOWN' && sapType !== 'UNKNOWN' && psType !== sapType) {
       btn.disabled = true;
       dot.className = 'w-2 h-2 rounded-full bg-rose-500';
-      txt.innerHTML = `❌ <strong>Tipe Modul Tidak Cocok!</strong> File PeopleSoft adalah <strong>${psType}</strong> sedangkan file SAP adalah <strong>${sapType}</strong>. Rekonsiliasi harus dilakukan pada modul yang sama.`;
+      txt.innerHTML = ` <strong>Module Type Mismatch!</strong> PeopleSoft File is <strong>${psType}</strong> while SAP file is <strong>${sapType}</strong>. Reconciliation must be performed on the same module.`;
       txt.className = 'text-rose-700 font-semibold text-xs';
       return;
     }
@@ -627,7 +628,7 @@ function checkReady() {
 
     btn.disabled = false;
     dot.className = 'w-2 h-2 rounded-full bg-emerald-500 pulse-dot';
-    txt.innerHTML = `✅ Kedua file valid & siap diproses (<strong>${psType}</strong>)! Klik "Start Reconciliation" untuk memulai.`;
+    txt.innerHTML = ` Both files are valid & ready to process (<strong>${psType}</strong>)! Click "Start Reconciliation" to begin.`;
     txt.className = 'text-emerald-700 font-semibold text-xs';
   } else {
     btn.disabled = true;
@@ -637,37 +638,37 @@ function checkReady() {
     if (psHasFile && sapHasFile) {
       if (psFileState.validation?.status === 'warn_swap' || sapFileState.validation?.status === 'warn_swap') {
         dot.className = 'w-2 h-2 rounded-full bg-amber-500 animate-pulse';
-        txt.innerHTML = '⚠️ <strong>File tertukar atau salah posisi!</strong> Klik tombol "Tukar Posisi File" di kotak yang sesuai.';
+        txt.innerHTML = ' <strong>Files are swapped or misplaced!</strong> Click the "Swap Files" button in the appropriate box.';
         txt.className = 'text-amber-800 text-xs';
       } else {
         dot.className = 'w-2 h-2 rounded-full bg-rose-500';
-        const errReason = (!psOk ? psFileState.validation?.reason : '') || (!sapOk ? sapFileState.validation?.reason : '') || 'Salah satu atau kedua file ditolak.';
-        txt.innerHTML = `❌ <strong>File Ditolak:</strong> ${errReason}`;
+        const errReason = (!psOk ? psFileState.validation?.reason : '') || (!sapOk ? sapFileState.validation?.reason : '') || 'One or both files rejected.';
+        txt.innerHTML = ` <strong>File Rejected:</strong> ${errReason}`;
         txt.className = 'text-rose-700 text-xs';
       }
     } else if (psHasFile) {
       if (!psOk) {
         dot.className = 'w-2 h-2 rounded-full bg-rose-500';
-        txt.innerHTML = `❌ <strong>File PeopleSoft Ditolak:</strong> ${psFileState.validation?.reason}`;
+        txt.innerHTML = ` <strong>PeopleSoft File Rejected:</strong> ${psFileState.validation?.reason}`;
         txt.className = 'text-rose-700 text-xs';
       } else {
         dot.className = 'w-2 h-2 rounded-full bg-amber-500';
-        txt.textContent = `File PeopleSoft (${psFileState.profile.module}) siap. Menunggu file SAP Finance...`;
+        txt.textContent = `PeopleSoft File (${psFileState.profile.module}) ready. Waiting for SAP Finance file...`;
         txt.className = 'text-amber-700 text-xs';
       }
     } else if (sapHasFile) {
       if (!sapOk) {
         dot.className = 'w-2 h-2 rounded-full bg-rose-500';
-        txt.innerHTML = `❌ <strong>File SAP Ditolak:</strong> ${sapFileState.validation?.reason}`;
+        txt.innerHTML = ` <strong>SAP File Rejected:</strong> ${sapFileState.validation?.reason}`;
         txt.className = 'text-rose-700 text-xs';
       } else {
         dot.className = 'w-2 h-2 rounded-full bg-amber-500';
-        txt.textContent = `File SAP Finance (${sapFileState.profile.module}) siap. Menunggu file PeopleSoft...`;
+        txt.textContent = `SAP File Finance (${sapFileState.profile.module}) ready. Waiting for PeopleSoft file...`;
         txt.className = 'text-amber-700 text-xs';
       }
     } else {
       dot.className = 'w-2 h-2 rounded-full bg-slate-300';
-      txt.textContent = 'Silakan upload kedua file untuk memulai rekonsiliasi.';
+      txt.textContent = 'Please upload both files to start reconciliation.';
       txt.className = 'text-slate-500 text-xs';
     }
   }
@@ -798,10 +799,10 @@ function runComparison() {
     const sapHeader = rawSapRows[sapHdrIdx] || [];
 
     const sap_ref = currentDataType === 'FSA'
-      ? findColMulti(sapHeader, ['HMS_ASSIGNMENT', 'REFERENCE', 'REFERENCE_NUMBER'])
+      ? findColMulti(sapHeader, ['TEXT254', 'HMS_ASSIGNMENT', 'REFERENCE', 'REFERENCE_NUMBER'])
       : findColMulti(sapHeader, ['REFERENCE', 'REFERENCE_NUMBER', 'HMS_ASSIGNMENT']);
     const sap_gl = findColMulti(sapHeader, ['HMS_GL_AMOUNT', 'GL_AMOUNT', 'HMS_SUPL_AMOUNT', 'AMOUNT']);
-    const sap_pers = findColMulti(sapHeader, ['HMS_PERS_NO', 'PERS_NO', 'PERNR', 'EMPLID']);
+    const sap_pers = findColMulti(sapHeader, ['HMS_HEADER_TEXT', 'HMS_PERS_NO', 'PERS_NO', 'PERNR', 'EMPLID']);
     const sap_doc = findColMulti(sapHeader, ['HMS_DOC_NBR', 'DOC_NBR', 'DOCUMENT_NUMBER', 'BELNR']);
     const sap_txt = findColMulti(sapHeader, ['TEXT254', 'HMS_HEADER_TEXT', 'SGTXT', 'TEXT']);
     const sap_tax = findColMulti(sapHeader, ['TAX_CODE', 'MWSKZ']);
@@ -809,11 +810,20 @@ function runComparison() {
     for (let i = sapHdrIdx + 1; i < rawSapRows.length; i++) {
       const row = rawSapRows[i];
       if (!row || sap_ref < 0 || row.length <= sap_ref) continue;
-      const ref = String(row[sap_ref] || '').trim();
+      let ref = String(row[sap_ref] || '').trim();
+      if (currentDataType === 'FSA' && ref.length >= 10) {
+        ref = ref.slice(-10);
+      }
       if (!ref) continue;
 
       const glAmt = parseNum(sap_gl >= 0 ? row[sap_gl] : 0);
-      const persNo = sap_pers >= 0 ? String(row[sap_pers] || '').trim() : '';
+      let persNo = sap_pers >= 0 ? String(row[sap_pers] || '').trim() : '';
+      if (persNo.includes('-')) {
+        const parts = persNo.split('-');
+        if (parts.length >= 2) {
+          persNo = parts[1].trim();
+        }
+      }
       const docNbr = sap_doc >= 0 ? String(row[sap_doc] || '') : '';
       const text = sap_txt >= 0 ? String(row[sap_txt] || '') : '';
       const taxCode = sap_tax >= 0 ? String(row[sap_tax] || '') : '';
@@ -849,13 +859,9 @@ function runComparison() {
       const diff = sapTotal - psTotal;  // positive = SAP > PS (Excess), negative = PS > SAP
 
       let status, statusLabel, statusClass;
-      let isNikMismatch = false;
 
       if (p && s) {
-        if (p.emplid !== s.persNo) {
-          isNikMismatch = true;
-          status = 'mismatch'; statusLabel = 'NIK Mismatch'; statusClass = 'badge-excess-ps';
-        } else if (Math.abs(diff) < 1) {
+        if (Math.abs(diff) < 1) {
           status = 'match'; statusLabel = 'MATCH'; statusClass = 'badge-matched';
         } else if (diff > 0) {
           status = 'mismatch'; statusLabel = 'SAP > PS'; statusClass = 'badge-excess-sap';
@@ -863,7 +869,7 @@ function runComparison() {
           status = 'mismatch'; statusLabel = 'PS > SAP'; statusClass = 'badge-excess-ps';
         }
       } else if (p && !s) {
-        status = 'notfound'; statusLabel = 'PSFT Only'; statusClass = 'badge-only-ps';
+        status = 'notfound'; statusLabel = 'PeopleSoft Only'; statusClass = 'badge-only-ps';
       } else {
         status = 'notfound'; statusLabel = 'SAP Only'; statusClass = 'badge-only-sap';
       }
@@ -873,7 +879,6 @@ function runComparison() {
         emplid: p ? p.emplid : (s ? s.persNo : '—'),
         psTotal, sapTotal, diff,
         status, statusLabel, statusClass,
-        isNikMismatch,
         isDiff: status !== 'match',
         pData: p || null,
         sData: s || null,
@@ -975,10 +980,10 @@ function runComparison() {
       switchTab('compare');
       // Reset button and status for next time
       btn.innerHTML = `
-      <svg id="btn-icon-compare" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+      <svg id="btn-icon-compare" class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+        <path d="M8 5v14l11-7z" />
       </svg>
-      Compare & Reconcile
+      Start Reconciliation
     `;
       btn.disabled = false;
       statusText.className = '';
@@ -997,7 +1002,7 @@ function formatShortIDR(val) {
   } else if (absVal >= 1e6) {
     return 'Rp ' + (absVal / 1e6).toFixed(2).replace('.', ',') + ' Jt';
   } else {
-    return 'Rp ' + absVal.toLocaleString('id-ID');
+    return 'Rp ' + absVal.toLocaleString('en-US');
   }
 }
 
@@ -1027,22 +1032,22 @@ function updateKPIs() {
 
   const matchPct = fullTotal > 0 ? ((actMatched / fullTotal) * 100).toFixed(1) : 0;
 
-  setText('kpi-match', actMatched.toLocaleString('id-ID').replace(/,/g, '.'));
+  setText('kpi-match', actMatched.toLocaleString('en-US').replace(/,/g, '.'));
   setText('kpi-match-sub', `${matchPct}% dari Seluruh Invoice`);
 
   setText('kpi-ps-short', formatShortIDR(grandPS));
-  setText('kpi-ps-total', 'Rp ' + Math.round(grandPS).toLocaleString('id-ID').replace(/,/g, '.') + ',00');
+  setText('kpi-ps-total', 'Rp ' + Math.round(grandPS).toLocaleString('en-US').replace(/,/g, '.') + ',00');
 
   setText('kpi-sap-short', formatShortIDR(grandSAP));
-  setText('kpi-sap-total', 'Rp ' + Math.round(grandSAP).toLocaleString('id-ID').replace(/,/g, '.') + ',00');
+  setText('kpi-sap-total', 'Rp ' + Math.round(grandSAP).toLocaleString('en-US').replace(/,/g, '.') + ',00');
 
   // count all mismatches and notfounds (everything except match) to show in red diff card?
-  // User asked for "Selisih (IDR)", we can just use actMismatch since those are the ones with mismatching values
+  // User asked for "Difference (IDR)", we can just use actMismatch since those are the ones with mismatching values
   setText('kpi-mismatch-count', `${actMismatch} Invoice`);
   setText('kpi-diff-short', formatShortIDR(grandDiff));
 
   const diffPrefix = grandDiff >= 0 ? '+' : '-';
-  setText('kpi-diff', `${diffPrefix}Rp ${Math.round(Math.abs(grandDiff)).toLocaleString('id-ID').replace(/,/g, '.')},00`);
+  setText('kpi-diff', `${diffPrefix}Rp ${Math.round(Math.abs(grandDiff)).toLocaleString('en-US').replace(/,/g, '.')},00`);
 }
 
 // ---- SUMMARY PAGE ----
@@ -1071,7 +1076,7 @@ function updateSummaryPage() {
   // Hero section
   setText('sum-Period', periode.replace(/_/g, ' '));
   setText('sum-Type', jenis);
-  setText('sum-ts', new Date().toLocaleString('id-ID'));
+  setText('sum-ts', new Date().toLocaleString('en-US'));
 
   // KPI Cards
   setText('s-total', total);
@@ -1090,20 +1095,20 @@ function updateSummaryPage() {
   if (notfoundBar) notfoundBar.style.width = (total > 0 ? ((notfound / total) * 100).toFixed(1) : 0) + '%';
 
   // Financial Summary
-  setText('fin-match-ps', 'IDR ' + Math.round(matchPS).toLocaleString('id-ID'));
-  setText('fin-match-sap', 'IDR ' + Math.round(matchSAP).toLocaleString('id-ID'));
-  setText('fin-mm-ps', 'IDR ' + Math.round(mmPS).toLocaleString('id-ID'));
-  setText('fin-mm-sap', 'IDR ' + Math.round(mmSAP).toLocaleString('id-ID'));
-  setText('fin-mm-diff', (mmSAP - mmPS >= 0 ? '+' : '') + 'IDR ' + Math.round(mmSAP - mmPS).toLocaleString('id-ID'));
-  setText('fin-total-ps', 'IDR ' + Math.round(grandPS).toLocaleString('id-ID'));
-  setText('fin-total-sap', 'IDR ' + Math.round(grandSAP).toLocaleString('id-ID'));
+  setText('fin-match-ps', 'IDR ' + Math.round(matchPS).toLocaleString('en-US'));
+  setText('fin-match-sap', 'IDR ' + Math.round(matchSAP).toLocaleString('en-US'));
+  setText('fin-mm-ps', 'IDR ' + Math.round(mmPS).toLocaleString('en-US'));
+  setText('fin-mm-sap', 'IDR ' + Math.round(mmSAP).toLocaleString('en-US'));
+  setText('fin-mm-diff', (mmSAP - mmPS >= 0 ? '+' : '') + 'IDR ' + Math.round(mmSAP - mmPS).toLocaleString('en-US'));
+  setText('fin-total-ps', 'IDR ' + Math.round(grandPS).toLocaleString('en-US'));
+  setText('fin-total-sap', 'IDR ' + Math.round(grandSAP).toLocaleString('en-US'));
   const grandDiff = grandSAP - grandPS;
-  const diffStr = (grandDiff >= 0 ? '+' : '') + 'IDR ' + Math.round(grandDiff).toLocaleString('id-ID');
+  const diffStr = (grandDiff >= 0 ? '+' : '') + 'IDR ' + Math.round(grandDiff).toLocaleString('en-US');
   setText('fin-total-diff', diffStr);
 
   // Set the Net Difference KPI Card in Download Tab
   const diffPrefix = grandDiff >= 0 ? '+' : '-';
-  setText('sum-netdiff', `${diffPrefix}Rp ${Math.round(Math.abs(grandDiff)).toLocaleString('id-ID').replace(/,/g, '.')},00`);
+  setText('sum-netdiff', `${diffPrefix}Rp ${Math.round(Math.abs(grandDiff)).toLocaleString('en-US').replace(/,/g, '.')},00`);
 
   // File card labels
   ['ps', 'sap'].forEach(t => {
@@ -1271,7 +1276,7 @@ function renderTable() {
     const rowAccent = d.status === 'match' ? '' :
       d.statusLabel === 'SAP > PS' ? 'row-excess-sap' :
         d.statusLabel === 'PS > SAP' ? 'row-excess-ps' :
-          d.statusLabel === 'PSFT Only' ? 'row-only-ps' : 'row-only-sap';
+          d.statusLabel === 'PeopleSoft Only' ? 'row-only-ps' : 'row-only-sap';
 
     // ---- PS fields ----
     const psReceipt = d.pData && d.pData.items[0] ? d.pData.items[0].date : '—';
@@ -1280,7 +1285,7 @@ function renderTable() {
     const psMemo = d.pData ? (d.pData.items.map(x => x.Memo).filter(Boolean).join(' / ') || '—') : '—';
     const psEntitle = d.pData && d.pData.items[0] ? d.pData.items[0].entitle : '—';
     const psLines = d.pData ? d.pData.items.length : 0;
-    const psTotalFmt = d.psTotal > 0 ? Math.round(d.psTotal).toLocaleString('id-ID') : '—';
+    const psTotalFmt = d.psTotal > 0 ? Math.round(d.psTotal).toLocaleString('en-US') : '—';
 
     // ---- SAP fields ----
     const sapDoc = d.sData ? [...new Set(d.sData.lines.map(x => x.docNbr))].join(', ') || '—' : '—';
@@ -1289,11 +1294,11 @@ function renderTable() {
     const sapGLText = d.sData ? [...new Set(d.sData.lines.map(x => x.text).filter(Boolean))].slice(0, 2).join(' | ') || '—' : '—';
     const sapCostCtr = d.sData && d.sData.lines[0] ? getColVal(rawSapRows, d.sData.lines[0].row, 'HMS_COST_CENTER', 20) : '—';
     const sapLines = d.sData ? d.sData.lines.length : 0;
-    const sapTotalFmt = d.sapTotal > 0 ? Math.round(d.sapTotal).toLocaleString('id-ID') : '—';
+    const sapTotalFmt = d.sapTotal > 0 ? Math.round(d.sapTotal).toLocaleString('en-US') : '—';
 
     // ---- Diff ----
     const hasDiff = Math.abs(d.diff) >= 1;
-    const diffAbs = Math.round(Math.abs(d.diff)).toLocaleString('id-ID');
+    const diffAbs = Math.round(Math.abs(d.diff)).toLocaleString('en-US');
     const diffSign = d.diff > 0 ? '+' : (d.diff < 0 ? '−' : '');
     const diffStr = hasDiff ? `${diffSign} ${diffAbs}` : '—';
     const diffCellClass = d.diff > 0 ? 'text-amber-700 font-bold' :
@@ -1301,7 +1306,7 @@ function renderTable() {
     const diffArrow = d.diff > 0 ? '<span class="text-amber-500 ml-1">↑</span>' :
       d.diff < 0 ? '<span class="text-rose-500 ml-1">↓</span>' : '';
 
-    // ---- Keterangan ----
+    // ---- Notes ----
     const ket = d.ket;
 
     // ---- Chips on total cells ----
@@ -1316,10 +1321,10 @@ function renderTable() {
     const fbg = d.status === 'match' ? '#fff' :
       d.statusLabel === 'SAP > PS' ? '#fffbeb' :
         d.statusLabel === 'PS > SAP' ? '#fff1f2' :
-          d.statusLabel === 'PSFT Only' ? '#faf5ff' : '#eff6ff';
+          d.statusLabel === 'PeopleSoft Only' ? '#faf5ff' : '#eff6ff';
 
     return `
-      <tr class="data-row ${rowAccent} transition hover:brightness-95">
+      <tr class="data-row ${rowAccent} transition hover:bg-slate-50 cursor-pointer group/row" onclick="openDetailModal('${d.invoice}')">
         <td class="col-no  tbl-freeze-no  text-center text-slate-400 font-sans"         style="background:${fbg}">${start + i + 1}</td>
         <td class="col-inv tbl-freeze-inv font-bold text-navy-700 font-mono"            style="background:${fbg}; max-width:150px;">
           <div class="truncate" title="${d.invoice}">${d.invoice}</div>
@@ -1373,21 +1378,11 @@ function renderTable() {
         <td class="col-rec-diff border-l border-amber-100 text-right font-mono ${diffCellClass}${hasDiff ? ' bg-amber-50/50' : ''}">
           ${hasDiff ? `${diffStr}${diffArrow}` : '<span class="text-slate-300">—</span>'}
         </td>
-        <td class="group col-rec-ket border-l border-amber-100 text-slate-600 align-top p-1 relative">
-          <div class="relative w-48 h-full">
-            <textarea onchange="updateNote('${d.invoice}', this.value)" title="Klik untuk mengedit keterangan" class="w-full bg-transparent hover:bg-white border border-transparent group-hover:border-slate-200 rounded px-1.5 py-1 pr-6 text-[10px] leading-snug focus:outline-none focus:border-navy-400 focus:bg-white transition resize-none overflow-hidden" rows="2" oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'">${ket}</textarea>
-            <svg class="w-3.5 h-3.5 text-slate-300 absolute top-2 right-1.5 group-hover:text-slate-500 transition pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
-          </div>
+        <td class="col-rec-ket border-l border-amber-100 text-slate-600 align-top p-1.5">
+          <div class="w-48 whitespace-normal break-words text-[10px] leading-snug line-clamp-2 text-slate-500 group-hover/row:text-slate-700" title="${ket}">${ket}</div>
         </td>
         <td class="col-rec-status border-l border-amber-100 text-center">
           <span class="px-2 py-0.5 font-bold text-[10px] ${d.statusClass} whitespace-nowrap" style="border-radius:20px;">${d.statusLabel}</span>
-        </td>
-        <td class="col-rec-detail border-l border-amber-100 text-center">
-          <button onclick="openDetailModal('${d.invoice}')" title="Lihat baris detail"
-            class="inline-flex items-center gap-1 px-2 py-1 bg-navy-50 hover:bg-navy-100 text-navy-600 border border-navy-200 rounded-lg text-[10px] font-semibold transition">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-            Rows
-          </button>
         </td>
       </tr>`;
   }).join('');
@@ -1442,7 +1437,7 @@ function updatePagination(total, totalPages, start, end) {
     if (total === 0) {
       infoEl.textContent = '0 - 0 of 0 entries';
     } else {
-      infoEl.textContent = `${start + 1} - ${end} of ${total.toLocaleString('id-ID')} entries`;
+      infoEl.textContent = `${start + 1} - ${end} of ${total.toLocaleString('en-US')} entries`;
     }
   }
 
@@ -1533,7 +1528,7 @@ function openDetailModal(inv) {
   const d = reconData.find(r => r.invoice === inv);
   if (!d) return;
 
-  const diffStr = d.diff === 0 ? '—' : (d.diff > 0 ? '+' : '') + 'IDR ' + Math.round(d.diff).toLocaleString('id-ID');
+  const diffStr = d.diff === 0 ? '—' : (d.diff > 0 ? '+' : '') + 'IDR ' + Math.round(d.diff).toLocaleString('en-US');
   const diffColor = d.diff > 0 ? 'text-amber-600' : d.diff < 0 ? 'text-pink-600' : 'text-emerald-600';
 
   document.getElementById('modal-title').textContent = 'Invoice Detail: ' + inv;
@@ -1548,6 +1543,7 @@ function openDetailModal(inv) {
 
 function closeModal() {
   document.getElementById('modal').classList.add('hidden');
+  renderTable(); // Refresh table to show updated notes
 }
 
 function generateDetailHTML(d) {
@@ -1561,7 +1557,7 @@ function generateDetailHTML(d) {
         <td class="p-2 border border-slate-200">${i + 1}</td>
         <td class="p-2 border border-slate-200">${it.medCd} (${medLabel(it.medCd)})</td>
         <td class="p-2 border border-slate-200 text-center">${it.cat}</td>
-        <td class="p-2 border border-slate-200 text-right font-bold text-emerald-700">IDR ${Math.round(it.reimb).toLocaleString('id-ID')}</td>
+        <td class="p-2 border border-slate-200 text-right font-bold text-emerald-700">IDR ${Math.round(it.reimb).toLocaleString('en-US')}</td>
         <td class="p-2 border border-slate-200 font-sans text-slate-600 text-[10px] whitespace-normal break-words">${it.Memo || '—'}</td>
       </tr>`).join('');
   } else {
@@ -1578,7 +1574,7 @@ function generateDetailHTML(d) {
         <td class="p-2 border border-slate-200">${i + 1}</td>
         <td class="p-2 border border-slate-200 font-bold">${ln.docNbr}</td>
         <td class="p-2 border border-slate-200 text-right font-bold ${isExcess ? 'text-amber-600' : 'text-slate-800'}">
-          IDR ${Math.round(ln.glAmt).toLocaleString('id-ID')}
+          IDR ${Math.round(ln.glAmt).toLocaleString('en-US')}
         </td>
         <td class="p-2 border border-slate-200 font-sans text-slate-600 text-[10px] whitespace-normal break-words">${ln.text || '—'}</td>
         <td class="p-2 border border-slate-200 text-center">
@@ -1638,16 +1634,28 @@ function generateDetailHTML(d) {
         </div>
       </div>
     </div>
+    
+    <!-- Investigation Note Area -->
+    <div class="mt-5 border-t border-slate-200 pt-4">
+      <h4 class="font-bold text-[10px] uppercase tracking-wider text-slate-700 mb-2 flex items-center gap-1.5">
+        Conclusion / Discrepancy Notes
+      </h4>
+      <textarea 
+        onchange="updateNote('${d.invoice}', this.value)" 
+        class="w-full border rounded-lg p-3 text-xs text-slate-700 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 transition resize-y" 
+        rows="3" 
+        placeholder="Type investigation notes here... (text will appear in main table and Excel report)"
+      >${d.ket}</textarea>
+      <p class="text-[9px] text-slate-400 mt-1">Notes are auto-saved as you type and will be included in the downloaded Excel file.</p>
+    </div>
   `;
 }
-
-function closeModal() { document.getElementById('modal').classList.add('hidden'); }
 
 // ============================================================
 // EXCEL DOWNLOAD (REAL .xlsx)
 // ============================================================
-function downloadReport(source) {
-  if (!reconData.length) { showToast('⚠️ No data to download.'); return; }
+async function downloadReport(source) {
+  if (!reconData.length) { showToast(' No data to download.'); return; }
 
   const elPeriode = document.getElementById('inp-periode');
   const jenis = currentDataType || 'MBA';
@@ -1657,7 +1665,6 @@ function downloadReport(source) {
 
   showToast('Creating file ' + filename + '...');
 
-  const wb = XLSX.utils.book_new();
   let sheetData = [];
 
   if (source === 'ps') {
@@ -1718,27 +1725,184 @@ function downloadReport(source) {
     }
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(sheetData);
+  // Use ExcelJS if available for rich styling (Navy header, custom fonts, auto-fit widths)
+  if (window.ExcelJS) {
+    try {
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'SMART FBT Tool';
+      workbook.created = new Date();
+      workbook.modified = new Date();
 
-  // Style header row
-  const headerRange = XLSX.utils.decode_range(ws['!ref']);
-  for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
-    const addr = XLSX.utils.encode_cell({ r: 0, c: col });
-    if (!ws[addr]) continue;
-    ws[addr].s = {
-      fill: { patternType: 'solid', fgColor: { rgb: '0F2247' } },
-      font: { bold: true, color: { rgb: 'FFFFFF' } }
-    };
+      const worksheet = workbook.addWorksheet('Rekonsiliasi_' + srcLabel, {
+        views: [{ state: 'frozen', ySplit: 1 }] // Freeze header row
+      });
+
+      worksheet.addRows(sheetData);
+
+      const totalCols = (sheetData[0] || []).length;
+      const reconStartCol = totalCols - 3; // The 4 appended recon columns
+
+      // Style Header Row (Row 1)
+      const headerRow = worksheet.getRow(1);
+      headerRow.height = 26;
+      for (let c = 1; c <= totalCols; c++) {
+        const cell = headerRow.getCell(c);
+        const isReconCol = c >= reconStartCol;
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: isReconCol ? 'FF1E3A8A' : 'FF0F2247' } // Navy blue (#0F2247 / #1E3A8A)
+        };
+        cell.font = {
+          name: 'Calibri',
+          size: 11,
+          bold: true,
+          color: { argb: 'FFFFFFFF' } // White bold text
+        };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: 'center',
+          wrapText: true
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF1E293B' } },
+          left: { style: 'thin', color: { argb: 'FF334155' } },
+          bottom: { style: 'medium', color: { argb: 'FF020617' } },
+          right: { style: 'thin', color: { argb: 'FF334155' } }
+        };
+      }
+
+      // Style Data Rows (Highlight rows with differences/mismatches in soft red)
+      const dataRowCount = sheetData.length;
+      for (let r = 2; r <= dataRowCount; r++) {
+        const row = worksheet.getRow(r);
+        row.height = 20;
+
+        const statusCell = row.getCell(reconStartCol);
+        const statusVal = statusCell.value ? String(statusCell.value).trim() : '';
+        const isMatched = statusVal === 'MATCH';
+
+        // Discrepancy highlight: soft red/rose alert fill (#FFF1F2) so it's clearly distinct
+        const rowBgColor = isMatched ? null : 'FFFFF1F2';
+        const rowBorderColor = isMatched ? 'FFE2E8F0' : 'FFFECDD3';
+
+        for (let c = 1; c <= totalCols; c++) {
+          const cell = row.getCell(c);
+
+          if (rowBgColor) {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: rowBgColor }
+            };
+          }
+
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: rowBorderColor } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+          };
+
+          cell.font = {
+            name: 'Calibri',
+            size: 10,
+            color: { argb: isMatched ? 'FF1E293B' : 'FF881337' }
+          };
+        }
+
+        // Highlight REKON_STATUS badge cell
+        if (isMatched) {
+          statusCell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFDCFCE7' } // Soft green
+          };
+          statusCell.font = {
+            name: 'Calibri',
+            size: 10,
+            bold: true,
+            color: { argb: 'FF166534' } // Emerald green
+          };
+        } else {
+          statusCell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFECDD3' } // Soft red badge
+          };
+          statusCell.font = {
+            name: 'Calibri',
+            size: 10,
+            bold: true,
+            color: { argb: 'FF991B1B' } // Bold red
+          };
+        }
+        statusCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+        // Number formatting & discrepancy highlight for amounts
+        const totalAmtCell = row.getCell(reconStartCol + 1);
+        if (typeof totalAmtCell.value === 'number') {
+          totalAmtCell.numFmt = '#,##0.00';
+          totalAmtCell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+
+        const diffAmtCell = row.getCell(reconStartCol + 2);
+        if (typeof diffAmtCell.value === 'number') {
+          diffAmtCell.numFmt = '#,##0.00';
+          diffAmtCell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+        if (!isMatched) {
+          diffAmtCell.font = {
+            name: 'Calibri',
+            size: 10,
+            bold: true,
+            color: { argb: 'FFDC2626' } // Bold red text for difference amount
+          };
+        }
+      }
+
+      // Auto-fit column widths
+      worksheet.columns.forEach((column) => {
+        let maxLen = 10;
+        column.eachCell({ includeEmpty: false }, (cell) => {
+          const valStr = cell.value !== null && cell.value !== undefined ? String(cell.value) : '';
+          if (valStr.length > maxLen) {
+            maxLen = Math.min(valStr.length, 36);
+          }
+        });
+        column.width = Math.max(maxLen + 3, 12);
+      });
+
+      // Write to buffer and trigger download
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showToast('File downloaded successfully: ' + filename);
+      return;
+    } catch (err) {
+      console.error('ExcelJS export error, falling back to XLSX:', err);
+    }
   }
 
+  // Fallback using standard SheetJS
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(sheetData);
   XLSX.utils.book_append_sheet(wb, ws, 'Rekonsiliasi_' + srcLabel);
   XLSX.writeFile(wb, filename);
   showToast('File downloaded successfully: ' + filename);
 }
 
-function downloadBothReports() {
-  downloadReport('ps');
-  setTimeout(() => downloadReport('sap'), 800);
+async function downloadBothReports() {
+  await downloadReport('ps');
+  setTimeout(() => downloadReport('sap'), 1000);
 }
 
 function buildKetPS(d) {
@@ -1746,16 +1910,13 @@ function buildKetPS(d) {
 }
 
 function buildKetSAP(d) {
-  if (d.status === 'match') return 'Matched. Data sesuai';
-  if (d.statusLabel === 'SAP Only') return 'Data tidak ditemukan di PeopleSoft.';
-  if (d.statusLabel === 'PSFT Only') return 'Data tidak ditemukan di SAP.';
+  if (d.status === 'match') return 'Data Matched.';
+  if (d.statusLabel === 'SAP Only') return 'Data not found in PeopleSoft.';
+  if (d.statusLabel === 'PeopleSoft Only') return 'Data not found in SAP.';
 
-  if (d.isNikMismatch) {
-    return `Selisih NIK: PS (${d.pData.emplid}) vs SAP (${d.sData.persNo}). Pembayaran berpotensi salah sasaran!`;
-  }
 
   const diffAbs = Math.round(Math.abs(d.diff));
-  return `Terdapat selisih nominal sebesar Rp ${diffAbs.toLocaleString('id-ID')}.`;
+  return `There is a nominal difference of IDR ${diffAbs.toLocaleString('en-US')}.`;
 }
 
 // ============================================================
@@ -1789,7 +1950,7 @@ function loadDemoData() {
 
   handleParsedRows(rawPsRows, { name: 'HDC_FBT_PS_MBA_10Agt_9Sept26.xlsx', size: 1024 }, 'ps', 'Demo');
   handleParsedRows(rawSapRows, { name: 'HDC_FBT_SAP_MBA_10Agt_9Sept26.xlsx', size: 1024 }, 'sap', 'Demo');
-  showToast('Sample data loaded successfully. Click "Compare & Reconcile".');
+  showToast('Sample data loaded successfully. Click "Start Reconciliation".');
 }
 
 // ============================================================
@@ -1817,7 +1978,7 @@ function parseNum(val) {
 function formatRp(val) {
   if (val >= 1e9) return (val / 1e9).toFixed(2) + ' M';
   if (val >= 1e6) return (val / 1e6).toFixed(2) + ' Jt';
-  return Math.round(val).toLocaleString('id-ID');
+  return Math.round(val).toLocaleString('en-US');
 }
 function setText(id, val) {
   const el = document.getElementById(id);

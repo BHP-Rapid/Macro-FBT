@@ -5,8 +5,8 @@ let appJS = fs.readFileSync('app.js', 'utf8');
 // Replace dummy data
 const dummyDataStart = appJS.indexOf('const sapData = [');
 const dummyDataEnd = appJS.indexOf('/* ===== POPULATE TABLES ===== */');
-appJS = appJS.substring(0, dummyDataStart) + 
-`let sapData = [];
+appJS = appJS.substring(0, dummyDataStart) +
+  `let sapData = [];
 let psData = [];
 
 function readFileAsArrayBuffer(file) {
@@ -49,7 +49,7 @@ async function doRealReconciliation() {
     const sapTypeIdx = sapHeaders.indexOf('HMS_FBT_TYPE');
     
     const psEmpIdx = psHeaders.indexOf('EMPLID');
-    const psAmtIdx = psHeaders.indexOf('Total Payment PSFT');
+    const psAmtIdx = psHeaders.indexOf('Total Payment PeopleSoft');
     const psTypeIdx = psHeaders.findIndex(h => typeof h === 'string' && h.includes('HMS_MEDICAL_CD'));
     
     let parsedSAP = sapRows.filter(r => r[sapEmpIdx]).map(row => ({
