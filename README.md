@@ -1,7 +1,7 @@
 # FBT Reconciliation Tool
 
 Aplikasi rekonsiliasi Fringe Benefit Tax (FBT) yang membandingkan data **PeopleSoft** dengan data **SAP**
-untuk modul **MBA**, **C&B**, dan **FSA**. Seluruh proses berjalan di browser Anda; tidak ada server dan
+untuk modul **MBA**, **C&B**, dan **FSA**. Seluruh proses berjalan di browser, tidak ada server dan
 tidak ada data yang dikirim keluar.
 
 ## Cara Menjalankan
