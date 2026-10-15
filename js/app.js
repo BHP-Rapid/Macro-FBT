@@ -220,25 +220,24 @@ function parseFileName(fileName) {
 function normalizeHeaderName(raw) {
   if (!raw) return '';
   let str = String(raw).trim().toUpperCase();
-  // Strip parenthetical notes, e.g. "HMS_MEDICAL_CD (Cek TER...)" -> "HMS_MEDICAL_CD"
-  const parenIdx = str.indexOf('(');
-  if (parenIdx > -1) {
-    const mainPart = str.substring(0, parenIdx).trim();
-    if (mainPart) str = mainPart;
-  }
+  // Strip parenthetical notes: (...), [...], {...}
+  str = str.replace(/\s*[\(\[\{][^\)\]\}]*[\)\]\}]?/g, '').trim();
+  // Strip trailing notes after colons, dashes or arrows: " - ...", " : ...", " -> ..."
+  str = str.replace(/\s+[-:>].*$/, '').trim();
   return str.replace(/\s+/g, '_');
 }
 
 function findHeaderRowIndex(rows) {
-  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+  if (!Array.isArray(rows)) return 0;
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
     const row = rows[i];
     if (!Array.isArray(row)) continue;
     const normalized = row.map(normalizeHeaderName);
     const isPS = normalized.some(h =>
-      h === 'EMPLID' || h === 'EMPL_ID' || h === 'HMS_INVOICE_NBR' || h === 'ECS_RMB_SAP_REF' || h === 'ECS_RMB_TRANSID' || h === 'HMS_FSA_TRANS_ID'
+      h === 'EMPLID' || h === 'EMPL_ID' || h === 'HMS_INVOICE_NBR' || h === 'ECS_RMB_SAP_REF' || h === 'ECS_RMB_TRANSID' || h === 'HMS_FSA_TRANS_ID' || h === 'HMS_REIMBURSE_AMT' || h === 'ECS_AMT_RMB' || h === 'HMS_FLX_UNIT'
     );
     const isSAP = normalized.some(h =>
-      h === 'HMS_FBT_SEQNBR' || h === 'REFERENCE' || h === 'REFERENCE_NUMBER' || h === 'HMS_PERS_NO' || h === 'HMS_GL_AMOUNT' || h === 'HMS_DOC_NBR'
+      h === 'HMS_FBT_SEQNBR' || h === 'REFERENCE' || h === 'REFERENCE_NUMBER' || h === 'HMS_PERS_NO' || h === 'HMS_GL_AMOUNT' || h === 'HMS_DOC_NBR' || h === 'HMS_SUPL_AMOUNT'
     );
     if (isPS || isSAP) return i;
   }
@@ -268,6 +267,32 @@ function detectFileProfile(rows, fileName = '') {
   const hasSapGl = normalized.some(h => h === 'HMS_GL_AMOUNT');
   const hasSapSeq = normalized.some(h => h === 'HMS_FBT_SEQNBR' || h === 'HMS_DOC_NBR');
 
+  // Universal Invoice Pattern scan for PeopleSoft (YYMMDD + [MB/CB/FB] + 6 digit)
+  let universalPsCol = -1;
+  let universalPsMod = null;
+  const pCheckLimit = Math.min(rows.length, hdrIdx + 30);
+  for (let c = 0; c < headerRow.length; c++) {
+    let mCount = 0;
+    const mCounts = { MB: 0, CB: 0, FB: 0 };
+    for (let r = hdrIdx + 1; r < pCheckLimit; r++) {
+      const v = String(rows[r]?.[c] || '').trim();
+      const m = v.match(/^\d{6}(MB|CB|FB)\d{6}$/i);
+      if (m) {
+        mCount++;
+        mCounts[m[1].toUpperCase()] = (mCounts[m[1].toUpperCase()] || 0) + 1;
+      }
+    }
+    if (mCount >= 2 || (rows.length <= hdrIdx + 3 && mCount >= 1)) {
+      universalPsCol = c;
+      let topM = 'MB', topV = -1;
+      for (const [k, v] of Object.entries(mCounts)) {
+        if (v > topV) { topV = v; topM = k; }
+      }
+      universalPsMod = topM === 'MB' ? 'MBA' : (topM === 'CB' ? 'CB' : 'FSA');
+      break;
+    }
+  }
+
   let psScore = 0;
 
   // Deteksi Tipe (Module) dari Nama File jika memungkinkan
@@ -277,11 +302,12 @@ function detectFileProfile(rows, fileName = '') {
   else if (upName.includes('FSA') || upName.includes('FLEX')) guessMod = 'FSA';
   else if (upName.includes('CB') || upName.includes('C&B') || upName.includes('C%26B')) guessMod = 'CB';
 
-  let psModule = guessMod !== 'UNKNOWN' ? guessMod : 'MBA';
+  let psModule = universalPsMod || (guessMod !== 'UNKNOWN' ? guessMod : 'MBA');
+  if (universalPsCol >= 0) psScore += 5;
   if (hasEmplid) psScore += 2;
-  if (hasPsMba) { psScore += 4; if (guessMod === 'UNKNOWN') psModule = 'MBA'; }
-  if (hasPsCb) { psScore += 4; if (guessMod === 'UNKNOWN') psModule = 'CB'; }
-  if (hasPsFsa) { psScore += 4; if (guessMod === 'UNKNOWN') psModule = 'FSA'; }
+  if (hasPsMba) { psScore += 4; if (!universalPsMod && guessMod === 'UNKNOWN') psModule = 'MBA'; }
+  if (hasPsCb) { psScore += 4; if (!universalPsMod && guessMod === 'UNKNOWN') psModule = 'CB'; }
+  if (hasPsFsa) { psScore += 4; if (!universalPsMod && guessMod === 'UNKNOWN') psModule = 'FSA'; }
   if (hasPsAnyMed) psScore += 2;
 
   let sapScore = 0;
@@ -292,7 +318,9 @@ function detectFileProfile(rows, fileName = '') {
   if (hasSapSeq) sapScore += 2;
 
   if (psScore >= 3 && psScore > sapScore) {
-    const keyCol = hasPsMba ? 'HMS_INVOICE_NBR' : (hasPsCb ? 'ECS_RMB_SAP_REF' : (hasPsFsa ? 'HMS_FSA_TRANS_ID' : 'EMPLID'));
+    const keyCol = universalPsCol >= 0
+      ? (headerRow[universalPsCol] || 'Invoice / Ref')
+      : (hasPsMba ? 'HMS_INVOICE_NBR' : (hasPsCb ? 'ECS_RMB_SAP_REF' : (hasPsFsa ? 'HMS_FSA_TRANS_ID' : 'EMPLID')));
     return {
       valid: true,
       system: 'ps',
@@ -308,18 +336,20 @@ function detectFileProfile(rows, fileName = '') {
     const keyCol = hasSapRef ? 'REFERENCE' : (hasSapAssign ? 'HMS_ASSIGNMENT' : 'REFERENCE');
     let sapMod = guessMod !== 'UNKNOWN' ? guessMod : (hasSapAssign && !hasSapRef ? 'FSA' : 'UNKNOWN');
 
-    // Jika masih UNKNOWN dari nama file, periksa sampel baris pada kolom REFERENCE untuk mendeteksi tag CB atau MB
+    // Jika masih UNKNOWN dari nama file, periksa sampel baris pada kolom REFERENCE untuk mendeteksi tag CB, MB, atau FB
     if (sapMod === 'UNKNOWN') {
       const refIdx = normalized.findIndex(h => h === 'REFERENCE' || h === 'REFERENCE_NUMBER');
       if (refIdx >= 0) {
-        let cbCount = 0, mbCount = 0;
+        let cbCount = 0, mbCount = 0, fbCount = 0;
         for (let r = hdrIdx + 1; r < Math.min(rows.length, hdrIdx + 25); r++) {
           const val = String(rows[r]?.[refIdx] || '').toUpperCase();
           if (val.includes('CB')) cbCount++;
           if (val.includes('MB')) mbCount++;
+          if (val.includes('FB')) fbCount++;
         }
-        if (cbCount > mbCount) sapMod = 'CB';
-        else if (mbCount > cbCount) sapMod = 'MBA';
+        if (cbCount > mbCount && cbCount > fbCount) sapMod = 'CB';
+        else if (mbCount > cbCount && mbCount > fbCount) sapMod = 'MBA';
+        else if (fbCount > 0) sapMod = 'FSA';
       }
     }
 
@@ -701,7 +731,36 @@ function runComparison() {
       : findHeaderRowIndex(rawPsRows);
     const psHeader = rawPsRows[psHdrIdx] || [];
 
-    if (psFileState && psFileState.profile && psFileState.profile.module) {
+    // 1. Universal Pattern-based Invoice Detection in PeopleSoft (YYMMDD + [MB/CB/FB] + 6 digit)
+    let detectedInvoiceCol = -1;
+    let detectedModuleCode = null;
+    const psCheckLimit = Math.min(rawPsRows.length, psHdrIdx + 50);
+    for (let c = 0; c < psHeader.length; c++) {
+      let matchCount = 0;
+      let modCounts = { MB: 0, CB: 0, FB: 0 };
+      for (let r = psHdrIdx + 1; r < psCheckLimit; r++) {
+        const val = String(rawPsRows[r]?.[c] || '').trim();
+        const match = val.match(/^\d{6}(MB|CB|FB)\d{6}$/i);
+        if (match) {
+          matchCount++;
+          const code = match[1].toUpperCase();
+          modCounts[code] = (modCounts[code] || 0) + 1;
+        }
+      }
+      if (matchCount >= 2 || (rawPsRows.length <= psHdrIdx + 3 && matchCount >= 1)) {
+        detectedInvoiceCol = c;
+        let maxCode = 'MB', maxVal = -1;
+        for (const [cd, cnt] of Object.entries(modCounts)) {
+          if (cnt > maxVal) { maxVal = cnt; maxCode = cd; }
+        }
+        detectedModuleCode = maxCode === 'MB' ? 'MBA' : (maxCode === 'CB' ? 'CB' : 'FSA');
+        break;
+      }
+    }
+
+    if (detectedModuleCode) {
+      currentDataType = detectedModuleCode;
+    } else if (psFileState && psFileState.profile && psFileState.profile.module) {
       currentDataType = psFileState.profile.module;
     } else {
       const psHeaderStr = psHeader.map(normalizeHeaderName).join(' ');
@@ -715,8 +774,14 @@ function runComparison() {
     }
 
     let ps_inv, ps_emp, ps_reimb, ps_med, ps_Memo, ps_cat, ps_date, ps_entitle;
+    if (detectedInvoiceCol >= 0) {
+      ps_inv = detectedInvoiceCol;
+    }
+
     if (currentDataType === 'FSA') {
-      ps_inv = findColMulti(psHeader, ['HMS_FSA_TRANS_ID', 'FSA_TRANS_ID', 'TRANS_ID']);
+      if (ps_inv === undefined || ps_inv < 0) {
+        ps_inv = findColMulti(psHeader, ['HMS_FSA_TRANS_ID', 'FSA_TRANS_ID', 'TRANS_ID']);
+      }
       ps_emp = findColMulti(psHeader, ['EMPLID', 'EMPL_ID', 'EMPLOYEE_ID', 'PERS_NO']);
       ps_reimb = findColMulti(psHeader, ['HMS_FLX_UNIT', 'FLX_UNIT', 'AMOUNT']);
       ps_med = findColMulti(psHeader, ['HMS_FSA_ITEM', 'FSA_ITEM']);
@@ -725,7 +790,9 @@ function runComparison() {
       ps_date = findColMulti(psHeader, ['RECEIPT_DT', 'RECEIPT_DATE', 'DATE']);
       ps_entitle = ps_cat;
     } else if (currentDataType === 'CB') {
-      ps_inv = findColMulti(psHeader, ['ECS_RMB_SAP_REF', 'ECS_RMB_TRANSID', 'SAP_REF', 'TRANSID']);
+      if (ps_inv === undefined || ps_inv < 0) {
+        ps_inv = findColMulti(psHeader, ['ECS_RMB_SAP_REF', 'ECS_RMB_TRANSID', 'SAP_REF', 'TRANSID']);
+      }
       ps_emp = findColMulti(psHeader, ['EMPLID', 'EMPL_ID', 'EMPLOYEE_ID', 'PERS_NO']);
       ps_reimb = findColMulti(psHeader, ['ECS_AMT_RMB', 'AMT_RMB', 'AMOUNT']);
       ps_med = findColMulti(psHeader, ['EXPENSE_TYPE', 'EXP_TYPE']);
@@ -734,7 +801,9 @@ function runComparison() {
       ps_date = findColMulti(psHeader, ['RECEIPT_DT', 'RECEIPT_DATE', 'DATE']);
       ps_entitle = ps_date;
     } else {
-      ps_inv = findColMulti(psHeader, ['HMS_INVOICE_NBR', 'INVOICE_NBR', 'INVOICE_NO', 'INVOICE']);
+      if (ps_inv === undefined || ps_inv < 0) {
+        ps_inv = findColMulti(psHeader, ['HMS_INVOICE_NBR', 'INVOICE_NBR', 'INVOICE_NO', 'INVOICE']);
+      }
       ps_emp = findColMulti(psHeader, ['EMPLID', 'EMPL_ID', 'EMPLOYEE_ID', 'PERS_NO']);
       ps_reimb = findColMulti(psHeader, ['HMS_REIMBURSE_AMT', 'HMS_RECEIPT_AMT', 'REIMBURSE_AMT', 'AMOUNT']);
       ps_med = findColMulti(psHeader, ['HMS_MEDICAL_CD', 'MEDICAL_CD']);
@@ -798,10 +867,52 @@ function runComparison() {
       : findHeaderRowIndex(rawSapRows);
     const sapHeader = rawSapRows[sapHdrIdx] || [];
 
-    const sap_ref = currentDataType === 'FSA'
-      ? findColMulti(sapHeader, ['TEXT254', 'HMS_ASSIGNMENT', 'REFERENCE', 'REFERENCE_NUMBER'])
-      : findColMulti(sapHeader, ['REFERENCE', 'REFERENCE_NUMBER', 'HMS_ASSIGNMENT']);
-    const sap_gl = findColMulti(sapHeader, ['HMS_GL_AMOUNT', 'GL_AMOUNT', 'HMS_SUPL_AMOUNT', 'AMOUNT']);
+    // SAP Matching Key Selection:
+    let sap_ref = -1;
+    let sap_ref_mode = 'direct'; // 'direct' or 'slice10'
+
+    if (currentDataType === 'FSA') {
+      // Prioritas 1: Jika file PS memiliki pola invoice (YYMMDDFB######), cocokkan ke REFERENCE SAP
+      if (detectedInvoiceCol >= 0) {
+        sap_ref = findColMulti(sapHeader, ['REFERENCE', 'REFERENCE_NUMBER', 'REF']);
+        sap_ref_mode = 'direct';
+      }
+
+      // Prioritas 2: HMS_ASSIGNMENT (10 digit, cocok langsung dengan HMS_FSA_TRANS_ID)
+      if (sap_ref < 0) {
+        const assignIdx = findColMulti(sapHeader, ['HMS_ASSIGNMENT', 'ASSIGNMENT']);
+        if (assignIdx >= 0) {
+          let hasValidAssign = false;
+          const checkLen = Math.min(rawSapRows.length, sapHdrIdx + 25);
+          for (let r = sapHdrIdx + 1; r < checkLen; r++) {
+            const v = String(rawSapRows[r]?.[assignIdx] || '').trim();
+            if (v && v !== '00000000' && v !== '0') { hasValidAssign = true; break; }
+          }
+          if (hasValidAssign) {
+            sap_ref = assignIdx;
+            sap_ref_mode = 'direct';
+          }
+        }
+      }
+
+      // Prioritas 3: TEXT254 (ambil 10 karakter terakhir)
+      if (sap_ref < 0) {
+        sap_ref = findColMulti(sapHeader, ['TEXT254', 'TEXT', 'SGTXT']);
+        sap_ref_mode = 'slice10';
+      }
+    } else {
+      sap_ref = findColMulti(sapHeader, ['REFERENCE', 'REFERENCE_NUMBER', 'HMS_ASSIGNMENT']);
+      sap_ref_mode = 'direct';
+    }
+
+    // SAP Nominal Column: Wajib HMS_GL_AMOUNT. Jangan jumlahkan HMS_SUPL_AMOUNT berulang kali!
+    let sap_gl = findColMulti(sapHeader, ['HMS_GL_AMOUNT', 'GL_AMOUNT', 'GL_AMT', 'AMOUNT']);
+    let isUsingSuplFallback = false;
+    if (sap_gl < 0) {
+      sap_gl = findColMulti(sapHeader, ['HMS_SUPL_AMOUNT', 'SUPL_AMOUNT']);
+      if (sap_gl >= 0) isUsingSuplFallback = true;
+    }
+
     const sap_pers = findColMulti(sapHeader, ['HMS_HEADER_TEXT', 'HMS_PERS_NO', 'PERS_NO', 'PERNR', 'EMPLID']);
     const sap_doc = findColMulti(sapHeader, ['HMS_DOC_NBR', 'DOC_NBR', 'DOCUMENT_NUMBER', 'BELNR']);
     const sap_txt = findColMulti(sapHeader, ['TEXT254', 'HMS_HEADER_TEXT', 'SGTXT', 'TEXT']);
@@ -811,7 +922,7 @@ function runComparison() {
       const row = rawSapRows[i];
       if (!row || sap_ref < 0 || row.length <= sap_ref) continue;
       let ref = String(row[sap_ref] || '').trim();
-      if (currentDataType === 'FSA' && ref.length >= 10) {
+      if (sap_ref_mode === 'slice10' && ref.length >= 10) {
         ref = ref.slice(-10);
       }
       if (!ref) continue;
@@ -828,21 +939,38 @@ function runComparison() {
       const text = sap_txt >= 0 ? String(row[sap_txt] || '') : '';
       const taxCode = sap_tax >= 0 ? String(row[sap_tax] || '') : '';
 
+      // Khusus MBA: Cek apakah baris ini adalah baris Excess MBA
+      const isExcessLine = (currentDataType === 'MBA' && /^excess\s+mba/i.test(text.trim()));
+
       if (!sapMap.has(ref)) {
         sapMap.set(ref, {
           ref, persNo,
           docNbr,
-          totalGL: 0, lines: []
+          totalGL: 0,
+          totalExcess: 0,
+          lines: []
         });
       }
       const obj = sapMap.get(ref);
-      obj.totalGL += glAmt;
+
+      if (isExcessLine) {
+        obj.totalExcess = (obj.totalExcess || 0) + glAmt;
+      }
+      if (isUsingSuplFallback) {
+        // Jika terpaksa fallback ke HMS_SUPL_AMOUNT, ambil 1 kali saja per nomor invoice
+        if (obj.totalGL === 0) obj.totalGL = glAmt;
+      } else {
+        // Alternatif A: Seluruh baris GL dijumlahkan murni ke totalGL
+        obj.totalGL += glAmt;
+      }
+
       obj.lines.push({
         row,
         glAmt,
         text,
         docNbr,
-        taxCode
+        taxCode,
+        isExcess: isExcessLine
       });
     }
 
@@ -856,13 +984,16 @@ function runComparison() {
 
       const psTotal = p ? p.totalReimb : 0;
       const sapTotal = s ? s.totalGL : 0;
-      const diff = sapTotal - psTotal;  // positive = SAP > PS (Excess), negative = PS > SAP
+      let diff = sapTotal - psTotal;  // positive = SAP > PS (Excess), negative = PS > SAP
 
       let status, statusLabel, statusClass;
 
       if (p && s) {
         if (Math.abs(diff) < 1) {
-          status = 'match'; statusLabel = 'MATCH'; statusClass = 'badge-matched';
+          diff = 0;
+          status = 'match';
+          statusLabel = 'MATCH';
+          statusClass = 'badge-matched';
         } else if (diff > 0) {
           status = 'mismatch'; statusLabel = 'SAP > PS'; statusClass = 'badge-excess-sap';
         } else {
@@ -1740,7 +1871,7 @@ async function downloadReport(source) {
       worksheet.addRows(sheetData);
 
       const totalCols = (sheetData[0] || []).length;
-      const reconStartCol = totalCols - 3; // The 4 appended recon columns
+      const reconStartCol = totalCols - 3; // The 4 appended recon columns (REKON_STATUS, TOTAL_*, DIFF, REMARKS)
 
       // Style Header Row (Row 1)
       const headerRow = worksheet.getRow(1);
@@ -1780,7 +1911,7 @@ async function downloadReport(source) {
 
         const statusCell = row.getCell(reconStartCol);
         const statusVal = statusCell.value ? String(statusCell.value).trim() : '';
-        const isMatched = statusVal === 'MATCH';
+        const isMatched = statusVal.startsWith('MATCH');
 
         // Discrepancy highlight: soft red/rose alert fill (#FFF1F2) so it's clearly distinct
         const rowBgColor = isMatched ? null : 'FFFFF1F2';
@@ -1910,10 +2041,11 @@ function buildKetPS(d) {
 }
 
 function buildKetSAP(d) {
-  if (d.status === 'match') return 'Data Matched.';
+  if (d.status === 'match') {
+    return 'Data Matched.';
+  }
   if (d.statusLabel === 'SAP Only') return 'Data not found in PeopleSoft.';
   if (d.statusLabel === 'PeopleSoft Only') return 'Data not found in SAP.';
-
 
   const diffAbs = Math.round(Math.abs(d.diff));
   return `There is a nominal difference of IDR ${diffAbs.toLocaleString('en-US')}.`;
@@ -1965,8 +2097,15 @@ function findCol(headers, name, fallback = -1) {
 function findColMulti(headers, names, fallback = -1) {
   if (!Array.isArray(headers)) return fallback;
   const targets = names.map(normalizeHeaderName);
+  const normHeaders = headers.map(normalizeHeaderName);
+  // 1. Exact normalized match
   for (const target of targets) {
-    const idx = headers.findIndex(h => normalizeHeaderName(h) === target);
+    const idx = normHeaders.findIndex(h => h === target);
+    if (idx >= 0) return idx;
+  }
+  // 2. Prefix match for dirty headers with additional notes
+  for (const target of targets) {
+    const idx = normHeaders.findIndex(h => h.startsWith(target + '_') || (h.length > target.length && h.startsWith(target)));
     if (idx >= 0) return idx;
   }
   return fallback;
