@@ -504,3 +504,10 @@ thead .tbl-freeze-emp {
   transform: scale(0.95);
   pointer-events: none;
 }
+/* Badge for Match with Excess MBA (Option 1) */
+.badge-matched-excess {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #86efac;
+  font-weight: 700;
+}
