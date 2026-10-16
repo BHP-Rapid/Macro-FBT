@@ -516,6 +516,7 @@ function swapUploadedFiles() {
   updateDropzoneUI('ps');
   updateDropzoneUI('sap');
   checkReady();
+  syncAutoPeriod();
   showToast('🔀 Posisi kedua file berhasil ditukar dan divalidasi!');
 }
 
@@ -592,6 +593,161 @@ function processFile(file, type) {
   }
 }
 
+// ============================================================
+// PERIOD DETECTION ENGINE (Multi-Tier Hierarchy)
+// Tier 1: Filename Pattern Matching (PeopleSoft / SAP)
+// Tier 2: SAP File Data (LASTUPDDTTM -> POSTING_DT -> DOCUMENT_DT)
+// Tier 3: PeopleSoft File Data (HMS_ACC_DATE / ECS_RMB_P1_DTTM / LASTUPDDTTM)
+// Tier 4: User Manual Override (Preserved if user typed custom text)
+// ============================================================
+
+function extractPeriodFromFilename(filename) {
+  if (!filename) return null;
+  const base = String(filename).replace(/\.[^/.]+$/, '').trim();
+
+  // Pattern 1: Until / Per phrases (e.g. "per 8 Februari 2025", "Until 03 (Jan-Nov) or 30 (Nov)")
+  const untilMatch = base.match(/(Until\s+[^._]+|per\s+\d{1,2}\s+[A-Za-z]+\s*\d{2,4})/i);
+  if (untilMatch) return untilMatch[1].trim();
+
+  // Pattern 2: Range e.g. "10Agt_9Sept26", "10Agt-9Sept26", "10Aug_9Sep26", "01Aug2026_31Aug2026", "01-Aug-2026_to_31-Aug-2026"
+  const rangeMatch = base.match(/(\d{1,2}[-_ ]?[A-Za-z]{3,9}[-_ ]?(?:\d{2,4})?)[-_ ]+(?:to[-_ ]+)?(\d{1,2}[-_ ]?[A-Za-z]{3,9}[-_ ]?(?:\d{2,4})?)/i);
+  if (rangeMatch) {
+    return (rangeMatch[1] + '_' + rangeMatch[2]).replace(/[\s-]+/g, '_');
+  }
+
+  // Pattern 3: Single Day-Month-Year e.g. "10May", "10Mei", "10Agt26"
+  const dmMatch = base.match(/(\d{1,2}[-_ ]?[A-Za-z]{3,9}(?:[-_ ]?\d{2,4})?)/i);
+  if (dmMatch && !/^(data|fbt|sap|ps|peoplesoft|hdc|mba|fsa|cb)$/i.test(dmMatch[1])) {
+    return dmMatch[1].replace(/[\s-]+/g, '_');
+  }
+
+  // Pattern 4: Month-Year e.g. "Agustus_2026", "Aug_2026"
+  const myMatch = base.match(/([A-Za-z]{3,9}[-_ ]\d{2,4})/i);
+  if (myMatch) {
+    return myMatch[1].replace(/[\s-]+/g, '_');
+  }
+
+  return null;
+}
+
+function parseAnyDateToTimestamp(val) {
+  if (!val) return null;
+  if (val instanceof Date) return val.getTime();
+  if (typeof val === 'number') {
+    return new Date((val - 25569) * 86400 * 1000).getTime();
+  }
+  const str = String(val).trim();
+  if (!str) return null;
+
+  // Format 1: ISO or timestamp e.g. "2026-08-14-05.00.17.000000" or "2026-08-14 05:00:17" or "2026-08-14"
+  const isoMatch = str.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+  if (isoMatch) {
+    const d = new Date(parseInt(isoMatch[1], 10), parseInt(isoMatch[2], 10) - 1, parseInt(isoMatch[3], 10));
+    return isNaN(d.getTime()) ? null : d.getTime();
+  }
+
+  // Format 2: SAP standard e.g. "13-AUG-2026" or "13-Aug-26" or "13/AUG/2026"
+  const sapMatch = str.match(/^(\d{1,2})[-/ ]([A-Za-z]{3})[-/ ](\d{2,4})/);
+  if (sapMatch) {
+    const months = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11,
+                     agt:7, mei:4, ags:7, okt:9, des:11 };
+    const m = months[sapMatch[2].toLowerCase()];
+    if (m !== undefined) {
+      let yr = parseInt(sapMatch[3], 10);
+      if (yr < 100) yr += 2000;
+      const d = new Date(yr, m, parseInt(sapMatch[1], 10));
+      return isNaN(d.getTime()) ? null : d.getTime();
+    }
+  }
+
+  const t = new Date(str).getTime();
+  return (isNaN(t) || t <= 0) ? null : t;
+}
+
+function formatPeriodRange(minTime, maxTime) {
+  if (!minTime || !maxTime || minTime === Infinity || maxTime === -Infinity) return null;
+  const minD = new Date(minTime), maxD = new Date(maxTime);
+  const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const p1 = `${minD.getDate()}${m[minD.getMonth()]}`;
+  const p2 = `${maxD.getDate()}${m[maxD.getMonth()]}${String(maxD.getFullYear()).slice(-2)}`;
+  return (p1 === p2.slice(0, p1.length)) ? p2 : `${p1}_${p2}`;
+}
+
+function detectReconPeriod() {
+  // Tier 1: Check filenames of uploaded files (PeopleSoft & SAP)
+  const psName = psFileState?.file?.name || '';
+  const sapName = sapFileState?.file?.name || '';
+  const fromPsName = extractPeriodFromFilename(psName);
+  const fromSapName = extractPeriodFromFilename(sapName);
+
+  if (fromPsName && fromPsName !== '10Agt_9Sept26' && fromPsName !== 'Periode') return fromPsName;
+  if (fromSapName && fromSapName !== '10Agt_9Sept26' && fromSapName !== 'Periode') return fromSapName;
+  if (fromPsName) return fromPsName;
+  if (fromSapName) return fromSapName;
+
+  // Tier 2: SAP File Data - check LASTUPDDTTM (consistent across MBA, C&B, FSA)
+  if (rawSapRows && rawSapRows.length > 1) {
+    const sapHdrIdx = (sapFileState?.profile?.headerIndex !== undefined) ? sapFileState.profile.headerIndex : findHeaderRowIndex(rawSapRows);
+    const sapHeader = rawSapRows[sapHdrIdx] || [];
+    let sapDateCol = findColMulti(sapHeader, ['LASTUPDDTTM', 'POSTING_DT', 'DOCUMENT_DT']);
+    if (sapDateCol >= 0) {
+      let minT = Infinity, maxT = -Infinity;
+      for (let i = sapHdrIdx + 1; i < rawSapRows.length; i++) {
+        const row = rawSapRows[i];
+        if (!row || row.length <= sapDateCol) continue;
+        const t = parseAnyDateToTimestamp(row[sapDateCol]);
+        if (t) {
+          if (t < minT) minT = t;
+          if (t > maxT) maxT = t;
+        }
+      }
+      const sapPeriod = formatPeriodRange(minT, maxT);
+      if (sapPeriod) return sapPeriod;
+    }
+  }
+
+  // Tier 3: PeopleSoft File Data Fallback (HMS_ACC_DATE / ECS_RMB_P1_DTTM / LASTUPDDTTM)
+  if (rawPsRows && rawPsRows.length > 1) {
+    const psHdrIdx = (psFileState?.profile?.headerIndex !== undefined) ? psFileState.profile.headerIndex : findHeaderRowIndex(rawPsRows);
+    const psHeader = rawPsRows[psHdrIdx] || [];
+    let psDateCol = -1;
+    if (currentDataType === 'CB') {
+      psDateCol = findColMulti(psHeader, ['ECS_RMB_P1_DTTM', 'RECEIPT_DT', 'RECEIPT_DATE']);
+    } else if (currentDataType === 'FSA') {
+      psDateCol = findColMulti(psHeader, ['LASTUPDDTTM', 'RECEIPT_DT', 'RECEIPT_DATE']);
+    } else {
+      psDateCol = findColMulti(psHeader, ['HMS_ACC_DATE', 'ORG_RECEIPT_DT', 'RECEIPT_DT', 'RECEIPT_DATE']);
+    }
+    if (psDateCol >= 0) {
+      let minT = Infinity, maxT = -Infinity;
+      for (let i = psHdrIdx + 1; i < rawPsRows.length; i++) {
+        const row = rawPsRows[i];
+        if (!row || row.length <= psDateCol) continue;
+        const t = parseAnyDateToTimestamp(row[psDateCol]);
+        if (t) {
+          if (t < minT) minT = t;
+          if (t > maxT) maxT = t;
+        }
+      }
+      const psPeriod = formatPeriodRange(minT, maxT);
+      if (psPeriod) return psPeriod;
+    }
+  }
+
+  return 'Periode';
+}
+
+function syncAutoPeriod() {
+  const elP = document.getElementById('inp-periode');
+  if (elP && !elP.dataset?.userEdited) {
+    const p = detectReconPeriod();
+    if (p && p !== 'Periode') {
+      elP.value = p;
+      elP.dispatchEvent(new Event('input'));
+    }
+  }
+}
+
 function handleParsedRows(rows, file, type, fmt) {
   // Filter out blank/ghost rows (rows where all cells are empty or whitespace)
   const cleanRows = rows.filter(r =>
@@ -627,6 +783,8 @@ function handleParsedRows(rows, file, type, fmt) {
   } else {
     showToast(' ' + validation.title + ': Check upload status.');
   }
+
+  syncAutoPeriod();
 }
 
 function checkReady() {
@@ -1019,20 +1177,14 @@ function runComparison() {
       reconData.push(rowData);
     });
 
-    // Set Date Range & Type labels
-    let periodStr = "Periode";
-    if (minTime !== Infinity && maxTime !== -Infinity) {
-      const minD = new Date(minTime), maxD = new Date(maxTime);
-      const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const p1 = `${minD.getDate()}${m[minD.getMonth()]}`;
-      const p2 = `${maxD.getDate()}${m[maxD.getMonth()]}${String(maxD.getFullYear()).slice(-2)}`;
-      periodStr = (p1 === p2.slice(0, p1.length)) ? p2 : `${p1}_${p2}`;
-    }
+    // Set Date Range & Type labels (Multi-tier detect: Filename -> SAP LASTUPDDTTM -> PS)
     const elPeriode = document.getElementById('inp-periode');
     if (elPeriode) {
-      elPeriode.value = periodStr;
-      const ev = new Event('input');
-      elPeriode.dispatchEvent(ev);
+      if (!elPeriode.value || elPeriode.value === 'Periode' || !elPeriode.dataset?.userEdited) {
+        const detectedPeriod = detectReconPeriod();
+        if (detectedPeriod) elPeriode.value = detectedPeriod;
+      }
+      elPeriode.dispatchEvent(new Event('input'));
     }
     const sumType = document.getElementById('sum-Type');
     if (sumType) sumType.textContent = currentDataType;
@@ -2142,6 +2294,13 @@ function resetAll() {
   document.getElementById('fi-ps').value = '';
   document.getElementById('fi-sap').value = '';
 
+  const elPeriode = document.getElementById('inp-periode');
+  if (elPeriode) {
+    delete elPeriode.dataset?.userEdited;
+    elPeriode.value = 'Periode';
+    elPeriode.dispatchEvent(new Event('input'));
+  }
+
   resetDropzoneUI('ps');
   resetDropzoneUI('sap');
 
@@ -2167,6 +2326,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const elP = document.getElementById('inp-periode');
   if (elP) {
     elP.addEventListener('input', () => {
+      // If user typed directly into the input field, mark as user edited
+      if (document.activeElement === elP) {
+        if (elP.dataset) elP.dataset.userEdited = 'true';
+      }
       const periode = elP.value || 'Periode';
       const sumPeriod = document.getElementById('sum-Period');
       if (sumPeriod) sumPeriod.textContent = periode;
